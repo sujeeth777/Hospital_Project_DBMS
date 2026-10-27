@@ -5,6 +5,28 @@ An end-to-end, academic-grade Database Management System project built using **O
 
 ---
 
+## ⚡ One-Click Quick Start (Single Run Setup)
+
+Anyone cloning this repository can get the entire project running with **a single command or double-click**:
+
+### For Windows Users (One-Click):
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/sujeeth777/Hospital_Project_DBMS.git
+   cd Hospital_Project_DBMS
+   ```
+2. Double-click **`START.bat`** (or run `.\START.bat` in CMD / PowerShell).
+
+### What `START.bat` Automatically Does For You:
+- ✅ **Auto-installs Python packages**: Runs `pip install -r requirements.txt` silently (`Flask`, `oracledb`, `python-dotenv`).
+- ✅ **Auto-creates `.env`**: Prompts for your local Oracle password if not yet configured.
+- ✅ **Auto-seeds Oracle Database**: Runs `setup_database.py` which detects missing tables, executes `01_create_tables.sql`, and inserts sample data from `02_sample_data.sql`.
+- ✅ **Auto-checks Embedded SQL C Binaries**: Verifies `hospital_menu.exe` or compiles via `build_all.bat` if Pro*C is installed.
+- ✅ **Launches Dashboard & Browser**: Starts `server.py` and immediately opens **`http://localhost:5000`** in your default browser.
+- ✅ **Console Control Center**: Provides an interactive terminal menu to launch the C console (`hospital_menu.exe`) anytime.
+
+---
+
 ## 📌 Architecture & Design
 
 This project demonstrates two connected interfaces interacting with the exact same normalized Oracle database:
