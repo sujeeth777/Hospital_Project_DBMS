@@ -1,0 +1,244 @@
+
+#include <stdio.h>
+#include <string.h>
+
+EXEC SQL INCLUDE SQLCA;
+
+int main(void)
+{
+    EXEC SQL BEGIN DECLARE SECTION;
+        char db_username[50];
+        char db_password[100];
+        char db_connection[100];
+
+        int appointment_id;
+        int consultation_id;
+        int prescription_id;
+
+        char patient_name[101];
+        char doctor_name[101];
+        char diagnosis[201];
+        char notes[501];
+        char medicine[101];
+        char dosage[101];
+        char duration[51];
+    EXEC SQL END DECLARE SECTION;
+
+    char username[50];
+    char password[100];
+
+    printf("====================================\n");
+    printf("   HOSPITAL MANAGEMENT SYSTEM\n");
+    printf("    CONSULTATION & PRESCRIPTION\n");
+    printf("====================================\n\n");
+
+    printf("Oracle username: ");
+    if (scanf("%49s", username) != 1)
+        return 1;
+
+    printf("Oracle password: ");
+    if (scanf("%99s", password) != 1)
+        return 1;
+
+    strcpy(db_username, username);
+    strcpy(db_password, password);
+    strcpy(db_connection, "localhost:1521/FREEPDB1");
+
+    EXEC SQL CONNECT :db_username
+        IDENTIFIED BY :db_password
+        USING :db_connection;
+
+    if (sqlca.sqlcode < 0)
+    {
+        printf("Connection failed. Oracle error: %ld\n",
+               sqlca.sqlcode);
+        return 1;
+    }
+
+    printf("\nConnected to Oracle successfully!\n");
+
+    printf("\n--- Completed Appointments ---\n");
+
+    EXEC SQL DECLARE appt_cursor CURSOR FOR
+        SELECT a.appointment_id,
+               p.patient_name,
+               d.doctor_name
+        FROM appointments a, patients p, doctors d
+        WHERE p.patient_id = a.patient_id
+          AND d.doctor_id = a.doctor_id
+          AND a.status = 'COMPLETED'
+        ORDER BY a.appointment_id;
+
+    EXEC SQL OPEN appt_cursor;
+
+    if (sqlca.sqlcode < 0)
+    {
+        printf("Could not open appointment list: %ld\n",
+               sqlca.sqlcode);
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    while (1)
+    {
+        EXEC SQL FETCH appt_cursor
+            INTO :appointment_id,
+                 :patient_name,
+                 :doctor_name;
+
+        if (sqlca.sqlcode == 1403)
+            break;
+
+        if (sqlca.sqlcode < 0)
+        {
+            printf("Error fetching appointments: %ld\n",
+                   sqlca.sqlcode);
+            EXEC SQL CLOSE appt_cursor;
+            EXEC SQL ROLLBACK WORK RELEASE;
+            return 1;
+        }
+
+        printf("Appointment ID: %d | Patient: %s | Doctor: %s\n",
+               appointment_id, patient_name, doctor_name);
+    }
+
+    EXEC SQL CLOSE appt_cursor;
+
+    printf("\nEnter completed appointment ID: ");
+    if (scanf("%d", &appointment_id) != 1)
+    {
+        printf("Invalid appointment ID.\n");
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    EXEC SQL SELECT p.patient_name, d.doctor_name
+        INTO :patient_name, :doctor_name
+        FROM appointments a, patients p, doctors d
+        WHERE p.patient_id = a.patient_id
+          AND d.doctor_id = a.doctor_id
+          AND a.appointment_id = :appointment_id
+          AND a.status = 'COMPLETED';
+
+    if (sqlca.sqlcode != 0)
+    {
+        printf("Appointment not found or not completed.\n");
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    printf("\nPatient: %s\n", patient_name);
+    printf("Doctor : %s\n", doctor_name);
+
+    printf("\nEnter consultation ID: ");
+    if (scanf("%d", &consultation_id) != 1)
+    {
+        printf("Invalid consultation ID.\n");
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    printf("Enter diagnosis: ");
+    if (scanf(" %200[^\n]", diagnosis) != 1)
+    {
+        printf("Invalid diagnosis.\n");
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    printf("Enter consultation notes: ");
+    if (scanf(" %500[^\n]", notes) != 1)
+    {
+        printf("Invalid consultation notes.\n");
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    EXEC SQL INSERT INTO consultations
+        (consultation_id, appointment_id, diagnosis,
+         consultation_notes, consultation_date)
+        VALUES
+        (:consultation_id, :appointment_id, :diagnosis,
+         :notes, SYSDATE);
+
+    if (sqlca.sqlcode != 0)
+    {
+        printf("Consultation insert failed: %ld\n",
+               sqlca.sqlcode);
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    printf("\nEnter prescription ID: ");
+    if (scanf("%d", &prescription_id) != 1)
+    {
+        printf("Invalid prescription ID.\n");
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    printf("Enter medicine name: ");
+    if (scanf(" %100[^\n]", medicine) != 1)
+    {
+        printf("Invalid medicine name.\n");
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    printf("Enter dosage: ");
+    if (scanf(" %100[^\n]", dosage) != 1)
+    {
+        printf("Invalid dosage.\n");
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    printf("Enter duration: ");
+    if (scanf(" %50[^\n]", duration) != 1)
+    {
+        printf("Invalid duration.\n");
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    EXEC SQL INSERT INTO prescriptions
+        (prescription_id, consultation_id, medicine_name,
+         dosage, duration)
+        VALUES
+        (:prescription_id, :consultation_id, :medicine,
+         :dosage, :duration);
+
+    if (sqlca.sqlcode != 0)
+    {
+        printf("Prescription insert failed: %ld\n",
+               sqlca.sqlcode);
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    EXEC SQL COMMIT WORK;
+
+    if (sqlca.sqlcode != 0)
+    {
+        printf("Commit failed: %ld\n", sqlca.sqlcode);
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    printf("\n====================================\n");
+    printf("Consultation and prescription saved!\n");
+    printf("====================================\n");
+    printf("Appointment ID : %d\n", appointment_id);
+    printf("Consultation ID: %d\n", consultation_id);
+    printf("Patient        : %s\n", patient_name);
+    printf("Doctor         : %s\n", doctor_name);
+    printf("Diagnosis      : %s\n", diagnosis);
+    printf("Medicine       : %s\n", medicine);
+    printf("Dosage         : %s\n", dosage);
+    printf("Duration       : %s\n", duration);
+    printf("====================================\n");
+
+    EXEC SQL ROLLBACK WORK RELEASE;
+
+    return 0;
+}

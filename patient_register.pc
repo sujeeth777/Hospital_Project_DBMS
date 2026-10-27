@@ -1,0 +1,131 @@
+
+#include <stdio.h>
+#include <string.h>
+
+EXEC SQL INCLUDE SQLCA;
+
+int main(void)
+{
+    char username[50];
+    char password[100];
+
+    EXEC SQL BEGIN DECLARE SECTION;
+        char db_username[50];
+        char db_password[100];
+        char db_connection[100];
+
+        int patient_id;
+        char patient_name[101];
+        char dob[11];
+        char gender[10];
+        char phone[21];
+        char address[201];
+    EXEC SQL END DECLARE SECTION;
+
+    printf("====================================\n");
+    printf("   HOSPITAL MANAGEMENT SYSTEM\n");
+    printf("       PATIENT REGISTRATION\n");
+    printf("====================================\n\n");
+
+    printf("Oracle username: ");
+    if (scanf("%49s", username) != 1) {
+        printf("Invalid username.\n");
+        return 1;
+    }
+
+    printf("Oracle password: ");
+    if (scanf("%99s", password) != 1) {
+        printf("Invalid password input.\n");
+        return 1;
+    }
+
+    strcpy(db_username, username);
+    strcpy(db_password, password);
+    strcpy(db_connection, "localhost:1521/FREEPDB1");
+
+    EXEC SQL CONNECT :db_username
+        IDENTIFIED BY :db_password
+        USING :db_connection;
+
+    if (sqlca.sqlcode < 0) {
+        printf("\nDatabase connection failed.\n");
+        printf("Oracle error code: %ld\n", sqlca.sqlcode);
+        return 1;
+    }
+
+    printf("\nConnected to Oracle successfully!\n\n");
+
+    printf("Enter patient ID: ");
+    if (scanf("%d", &patient_id) != 1) {
+        printf("Invalid patient ID.\n");
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    printf("Enter patient name: ");
+    if (scanf(" %100[^\n]", patient_name) != 1) {
+        printf("Invalid patient name.\n");
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    printf("Enter date of birth (DD-MM-YYYY): ");
+    if (scanf("%10s", dob) != 1) {
+        printf("Invalid date of birth.\n");
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    printf("Enter gender (Male/Female/Other): ");
+    if (scanf("%9s", gender) != 1) {
+        printf("Invalid gender.\n");
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    printf("Enter phone number: ");
+    if (scanf("%20s", phone) != 1) {
+        printf("Invalid phone number.\n");
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    printf("Enter address: ");
+    if (scanf(" %200[^\n]", address) != 1) {
+        printf("Invalid address.\n");
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    EXEC SQL INSERT INTO patients
+        (patient_id, patient_name, date_of_birth,
+         gender, phone, address)
+        VALUES
+        (:patient_id, :patient_name,
+         TO_DATE(:dob, 'DD-MM-YYYY'),
+         :gender, :phone, :address);
+
+    if (sqlca.sqlcode == 0) {
+        EXEC SQL COMMIT WORK;
+
+        printf("\nPatient registered successfully!\n");
+        printf("------------------------------------\n");
+        printf("Patient ID   : %d\n", patient_id);
+        printf("Patient Name : %s\n", patient_name);
+        printf("Date of Birth: %s\n", dob);
+        printf("Gender       : %s\n", gender);
+        printf("Phone        : %s\n", phone);
+        printf("Address      : %s\n", address);
+        printf("------------------------------------\n");
+    }
+    else {
+        printf("\nPatient registration failed.\n");
+        printf("Oracle error code: %ld\n", sqlca.sqlcode);
+
+        EXEC SQL ROLLBACK WORK;
+    }
+
+    EXEC SQL ROLLBACK WORK RELEASE;
+
+    return 0;
+}

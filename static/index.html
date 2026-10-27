@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hospital Management System — Oracle DBMS & Embedded SQL</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+
+  <!-- Top Navigation Header -->
+  <header class="top-nav">
+    <div class="nav-brand">
+      <div class="logo-icon">🏥</div>
+      <div class="brand-text">
+        <span class="system-title">MediCore Hospital Management</span>
+        <span class="system-subtitle">Oracle 23ai • Embedded SQL (Pro*C) • 3rd Year CSE DBMS Project</span>
+      </div>
+    </div>
+
+    <!-- Quick Patient Search Bar -->
+    <div class="header-search">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="topSearchInput" placeholder="Quick Patient Search (Enter ID e.g. 1001 or Name)..." />
+      <button class="btn btn-primary btn-sm" id="topSearchBtn">Search</button>
+    </div>
+
+    <div class="nav-right">
+      <div class="status-badge" id="dbStatusBadge">
+        <span class="status-dot online"></span>
+        <span class="status-text">Oracle 23ai Connected</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container with Sidebar + Content -->
+  <div class="app-layout">
+    <aside class="sidebar">
+      <nav class="sidebar-menu">
+        <button class="nav-item active" data-tab="overview">
+          <span class="icon">📊</span>
+          <span class="label">Overview</span>
+        </button>
+        <button class="nav-item" data-tab="patients">
+          <span class="icon">👥</span>
+          <span class="label">Patient Management</span>
+        </button>
+        <button class="nav-item" data-tab="doctors">
+          <span class="icon">👨‍⚕️</span>
+          <span class="label">Doctor & Departments</span>
+        </button>
+        <button class="nav-item" data-tab="appointments">
+          <span class="icon">📅</span>
+          <span class="label">Appointments</span>
+        </button>
+        <button class="nav-item" data-tab="billing">
+          <span class="icon">💳</span>
+          <span class="label">Billing & Payments</span>
+        </button>
+        <button class="nav-item" data-tab="query-explorer">
+          <span class="icon">⚡</span>
+          <span class="label">DBMS Query Explorer</span>
+        </button>
+        <button class="nav-item" data-tab="embedded-sql">
+          <span class="icon">💻</span>
+          <span class="label">Embedded SQL (Pro*C)</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="footer-title">Academic Context</div>
+        <div class="footer-text">Demonstrates Relational Algebra, Normalization (3NF), ACID Transactions, Host Variables & Precompiled C.</div>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      
+      <!-- TAB 1: OVERVIEW -->
+      <section id="tab-overview" class="tab-pane active">
+        <div class="section-header">
+          <div>
+            <h2>Hospital System Overview</h2>
+            <p class="section-desc">Real-time database metrics aggregated dynamically across relational tables.</p>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="fetchOverviewStats()">↻ Refresh Data</button>
+        </div>
+
+        <!-- Metric KPI Cards -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon patient-icon">👥</div>
+            <div class="stat-body">
+              <span class="stat-label">Total Patients</span>
+              <span class="stat-val" id="statPatients">-</span>
+              <span class="stat-sub">From <code>PATIENTS</code> table</span>
+            </div>
+          </div>
+
+          <div class="stat-card">
+            <div class="stat-icon doctor-icon">👨‍⚕️</div>
+            <div class="stat-body">
+              <span class="stat-label">Doctors & Specialists</span>
+              <span class="stat-val" id="statDoctors">-</span>
+              <span class="stat-sub">Across <span id="statDepartments">-</span> Departments</span>
+            </div>
+          </div>
+
+          <div class="stat-card">
+            <div class="stat-icon appt-icon">📅</div>
+            <div class="stat-body">
+              <span class="stat-label">Total Appointments</span>
+              <span class="stat-val" id="statAppointments">-</span>
+              <span class="stat-sub"><span id="statScheduled">-</span> Scheduled • <span id="statCompleted">-</span> Done</span>
+            </div>
+          </div>
+
+          <div class="stat-card">
+            <div class="stat-icon revenue-icon">💰</div>
+            <div class="stat-body">
+              <span class="stat-label">Total Revenue</span>
+              <span class="stat-val" id="statRevenue">-</span>
+              <span class="stat-sub"><span id="statUnpaid">-</span> Pending Invoices</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Action & Highlights Row -->
+        <div class="row-2col">
+          <div class="content-card">
+            <div class="card-header">
+              <h3>⚡ Quick Operations</h3>
+            </div>
+            <div class="card-body action-buttons-grid">
+              <button class="btn btn-outline" onclick="switchTab('patients'); openModal('registerPatientModal')">
+                <span>➕</span> Register New Patient
+              </button>
+              <button class="btn btn-outline" onclick="switchTab('doctors'); openModal('addDoctorModal')">
+                <span>👨‍⚕️</span> Register New Doctor
+              </button>
+              <button class="btn btn-outline" onclick="switchTab('appointments'); openModal('bookAppointmentModal')">
+                <span>📅</span> Book Doctor Appointment
+              </button>
+              <button class="btn btn-outline" onclick="switchTab('billing'); openModal('createBillModal')">
+                <span>💳</span> Generate Bill & Payment
+              </button>
+              <button class="btn btn-outline" onclick="switchTab('query-explorer')">
+                <span>🔍</span> Run DBMS Joins & Reports
+              </button>
+            </div>
+          </div>
+
+          <div class="content-card">
+            <div class="card-header">
+              <h3>📘 DBMS Syllabus Concepts Demonstrated</h3>
+            </div>
+            <div class="card-body concept-pills">
+              <div class="concept-item">
+                <strong>Referential Integrity:</strong> Foreign keys link Appointments ➔ Patients & Doctors, and Doctors ➔ Departments.
+              </div>
+              <div class="concept-item">
+                <strong>Conflict Prevention:</strong> Prevents overlapping appointment booking slots.
+              </div>
+              <div class="concept-item">
+                <strong>ACID Transactions:</strong> Atomic bill generation and payment commit/rollback.
+              </div>
+              <div class="concept-item">
+                <strong>Embedded SQL (Pro*C):</strong> Direct EXEC SQL execution in C with host variables and cursors.
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: PATIENTS -->
+      <section id="tab-patients" class="tab-pane">
+        <div class="section-header">
+          <div>
+            <h2>Patient Management</h2>
+            <p class="section-desc">Search patients by ID or Name, view full medical & billing history, or register new patients.</p>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-primary" onclick="openModal('registerPatientModal')">➕ Register Patient</button>
+          </div>
+        </div>
+
+        <!-- Filter / Search Box -->
+        <div class="filter-bar">
+          <input type="text" id="patientFilterInput" class="input-control" placeholder="Search by Patient ID (e.g. 1001), Name, or Phone..." />
+          <button class="btn btn-secondary" onclick="loadPatients()">Search</button>
+          <button class="btn btn-ghost" onclick="clearPatientSearch()">Reset</button>
+        </div>
+
+        <!-- Patients Table -->
+        <div class="content-card">
+          <div class="table-responsive">
+            <table class="data-table" id="patientsTable">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Patient Name</th>
+                  <th>Date of Birth</th>
+                  <th>Gender</th>
+                  <th>Phone</th>
+                  <th>Address</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="patientsTableBody">
+                <tr><td colspan="7" class="loading-cell">Loading patients from Oracle...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 3: DOCTOR & DEPARTMENTS -->
+      <section id="tab-doctors" class="tab-pane">
+        <div class="section-header">
+          <div>
+            <h2>Doctor Management & Department Directory</h2>
+            <p class="section-desc">Department-wise doctor rosters, live availability status, and workload aggregation.</p>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-outline" onclick="openModal('addDepartmentModal')">🏢 Add Department</button>
+            <button class="btn btn-primary" onclick="openModal('addDoctorModal')">👨‍⚕️ Add Doctor</button>
+          </div>
+        </div>
+
+        <div class="doctor-module-grid">
+          <!-- LEFT SIDE PANEL: DEPARTMENT AVAILABILITY & STATS -->
+          <div class="dept-side-panel">
+            <div class="dept-panel-header">
+              <h3>Departments & Availability</h3>
+              <span class="dept-panel-sub">Select department to filter doctors</span>
+            </div>
+            
+            <div class="dept-card all-depts-card active" id="deptFilterAll" onclick="filterDoctorsByDept(null)">
+              <div class="dept-card-top">
+                <span class="dept-name">🏥 All Departments</span>
+                <span class="dept-total-badge" id="allDeptsCount">0 Doctors</span>
+              </div>
+              <div class="dept-status-breakdown">
+                <span class="status-chip chip-avail" id="allAvailCount">🟢 0 Available</span>
+                <span class="status-chip chip-busy" id="allBusyCount">🟡 0 Busy</span>
+                <span class="status-chip chip-leave" id="allLeaveCount">🔴 0 On Leave</span>
+              </div>
+            </div>
+
+            <div id="departmentListPanel" class="dept-cards-list">
+              <!-- Dynamically populated from /api/departments -->
+            </div>
+          </div>
+
+          <!-- RIGHT MAIN: DOCTOR ROSTER -->
+          <div class="doctor-roster-main">
+            <!-- Filter Bar for Doctors -->
+            <div class="filter-bar doctor-filters">
+              <input type="text" id="doctorSearchInput" class="input-control" placeholder="Search doctor by name or specialization..." oninput="debounceDoctorSearch()" />
+              <select id="doctorStatusFilter" class="input-control" style="width: 180px;" onchange="loadDoctors()">
+                <option value="">All Statuses</option>
+                <option value="AVAILABLE">🟢 Available Only</option>
+                <option value="BUSY">🟡 Busy Only</option>
+                <option value="ON_LEAVE">🔴 On Leave Only</option>
+              </select>
+              <button class="btn btn-secondary btn-sm" onclick="resetDoctorFilters()">Reset</button>
+            </div>
+
+            <div class="content-card">
+              <div class="table-responsive">
+                <table class="data-table" id="doctorsTable">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Doctor Name</th>
+                      <th>Specialization</th>
+                      <th>Department & Location</th>
+                      <th>Contact</th>
+                      <th>Current Availability</th>
+                      <th>Workload</th>
+                    </tr>
+                  </thead>
+                  <tbody id="doctorsTableBody">
+                    <tr><td colspan="7" class="loading-cell">Loading doctors...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 4: APPOINTMENTS -->
+      <section id="tab-appointments" class="tab-pane">
+        <div class="section-header">
+          <div>
+            <h2>Appointment Management</h2>
+            <p class="section-desc">Schedule appointments with real-time race condition & conflict prevention.</p>
+          </div>
+          <button class="btn btn-primary" onclick="openModal('bookAppointmentModal')">📅 Schedule Appointment</button>
+        </div>
+
+        <div class="content-card">
+          <div class="table-responsive">
+            <table class="data-table" id="appointmentsTable">
+              <thead>
+                <tr>
+                  <th>Appt ID</th>
+                  <th>Patient</th>
+                  <th>Doctor</th>
+                  <th>Specialization</th>
+                  <th>Appointment Time</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="appointmentsTableBody">
+                <tr><td colspan="6" class="loading-cell">Loading appointments...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 5: BILLING -->
+      <section id="tab-billing" class="tab-pane">
+        <div class="section-header">
+          <div>
+            <h2>Billing & Payment Ledger</h2>
+            <p class="section-desc">Demonstrates ACID transactions: multi-table invoice generation and payment settlement.</p>
+          </div>
+          <button class="btn btn-primary" onclick="openModal('createBillModal')">💳 Generate Bill & Payment</button>
+        </div>
+
+        <div class="content-card">
+          <div class="table-responsive">
+            <table class="data-table" id="billingTable">
+              <thead>
+                <tr>
+                  <th>Bill ID</th>
+                  <th>Appointment</th>
+                  <th>Patient Name</th>
+                  <th>Total Amount</th>
+                  <th>Paid Amount</th>
+                  <th>Balance Due</th>
+                  <th>Date</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="billingTableBody">
+                <tr><td colspan="8" class="loading-cell">Loading invoices...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 6: QUERY EXPLORER (DBMS SYLLABUS LAB) -->
+      <section id="tab-query-explorer" class="tab-pane">
+        <div class="section-header">
+          <div>
+            <h2>DBMS Query Explorer & Relational Algebra Lab</h2>
+            <p class="section-desc">Interactively run core DBMS concepts: Selections, Equi-Joins, Outer Joins, Aggregation, and Subqueries.</p>
+          </div>
+        </div>
+
+        <div class="query-explorer-layout">
+          <div class="query-sidebar">
+            <div class="sidebar-heading">Predefined Academic Queries</div>
+            <div id="queryList" class="query-list">
+              <!-- Dynamically populated from /api/query_explorer/catalog -->
+            </div>
+          </div>
+
+          <div class="query-main">
+            <div class="query-editor-card">
+              <div class="editor-header">
+                <div>
+                  <h3 id="queryTitle">Select a query template from the left</h3>
+                  <div class="query-concept-badge" id="queryConcept">DBMS Concept Explanation</div>
+                </div>
+                <button class="btn btn-primary btn-sm" id="btnExecuteQuery">▶ Execute SQL</button>
+              </div>
+
+              <textarea id="sqlQueryInput" class="code-editor" rows="6" placeholder="Enter SQL SELECT query..."></textarea>
+            </div>
+
+            <!-- Query Results -->
+            <div class="content-card query-results-card">
+              <div class="results-header">
+                <span class="results-meta">Result: <strong id="queryRowCount">0</strong> rows returned (<span id="queryExecTime">0 ms</span>)</span>
+              </div>
+              <div class="table-responsive">
+                <table class="data-table results-table" id="queryResultsTable">
+                  <thead id="queryResultsHead">
+                    <tr><th>Columns</th></tr>
+                  </thead>
+                  <tbody id="queryResultsBody">
+                    <tr><td class="loading-cell">Execute a query above to inspect database results.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 7: EMBEDDED SQL (PRO*C) LAB -->
+      <section id="tab-embedded-sql" class="tab-pane">
+        <div class="section-header">
+          <div>
+            <h2>Embedded SQL (Oracle Pro*C) Code & Architecture</h2>
+            <p class="section-desc">Inspect how SQL statements are embedded in host C code using Oracle's Pro*C precompiler.</p>
+          </div>
+        </div>
+
+        <div class="pro-c-intro-banner">
+          <div class="pro-c-concept">
+            <h4>1. Host Variables</h4>
+            <p>Declared between <code>EXEC SQL BEGIN/END DECLARE SECTION</code>. Passed to SQL using a colon (e.g. <code>:patient_id</code>).</p>
+          </div>
+          <div class="pro-c-concept">
+            <h4>2. SQLCA (Communications Area)</h4>
+            <p>Monitors execution status. <code>sqlca.sqlcode == 0</code> (Success), <code>1403</code> (NO DATA FOUND), <code>&lt; 0</code> (Oracle Error).</p>
+          </div>
+          <div class="pro-c-concept">
+            <h4>3. Cursors</h4>
+            <p>Handles multi-row result sets with <code>DECLARE</code>, <code>OPEN</code>, <code>FETCH INTO</code>, and <code>CLOSE</code>.</p>
+          </div>
+          <div class="pro-c-concept">
+            <h4>4. Indicator Variables</h4>
+            <p>Handles NULL values. Indicator <code>-1</code> signifies the database column contained a NULL value.</p>
+          </div>
+        </div>
+
+        <div class="embedded-sql-layout">
+          <div class="file-selector-sidebar">
+            <div class="sidebar-heading">Pro*C Source Files (.pc)</div>
+            <div id="pcFileList" class="pc-file-list">
+              <!-- Populated dynamically -->
+            </div>
+          </div>
+
+          <div class="file-code-viewer">
+            <div class="viewer-header">
+              <span id="viewingFileName" class="file-title">Select a file</span>
+              <span id="viewingFileDesc" class="file-desc"></span>
+            </div>
+            <pre class="code-display"><code id="codeViewerContent">// Select a Pro*C file from the left to inspect its Embedded SQL source code.</code></pre>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- MODAL: REGISTER PATIENT -->
+  <div class="modal-overlay" id="registerPatientModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>➕ Register New Patient</h3>
+        <button class="modal-close" onclick="closeModal('registerPatientModal')">&times;</button>
+      </div>
+      <form id="registerPatientForm" onsubmit="handlePatientRegistration(event)">
+        <div class="form-group">
+          <label>Full Patient Name *</label>
+          <input type="text" id="regPatientName" class="input-control" placeholder="e.g. Ramesh Kumar" required />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Date of Birth</label>
+            <input type="date" id="regPatientDOB" class="input-control" />
+          </div>
+          <div class="form-group">
+            <label>Gender</label>
+            <select id="regPatientGender" class="input-control">
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Phone Number</label>
+          <input type="tel" id="regPatientPhone" class="input-control" placeholder="10-digit mobile number" />
+        </div>
+        <div class="form-group">
+          <label>Address</label>
+          <input type="text" id="regPatientAddress" class="input-control" placeholder="City or Street Address" />
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('registerPatientModal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save to Oracle Database</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: REGISTER DOCTOR -->
+  <div class="modal-overlay" id="addDoctorModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>👨‍⚕️ Register New Doctor</h3>
+        <button class="modal-close" onclick="closeModal('addDoctorModal')">&times;</button>
+      </div>
+      <form id="addDoctorForm" onsubmit="handleDoctorRegistration(event)">
+        <div class="form-group">
+          <label>Doctor Full Name *</label>
+          <input type="text" id="docName" class="input-control" placeholder="e.g. Dr. Rajesh Verma" required />
+        </div>
+        <div class="form-group">
+          <label>Medical Specialization *</label>
+          <input type="text" id="docSpecialization" class="input-control" placeholder="e.g. Pediatrician, Dermatologist, ENT Specialist" required />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Department *</label>
+            <select id="docDepartmentSelect" class="input-control" required>
+              <option value="">Loading departments...</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Current Status *</label>
+            <select id="docStatusSelect" class="input-control" required>
+              <option value="AVAILABLE">🟢 Available</option>
+              <option value="BUSY">🟡 Busy</option>
+              <option value="ON_LEAVE">🔴 On Leave</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Contact Phone</label>
+          <input type="tel" id="docPhone" class="input-control" placeholder="10-digit phone number" />
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('addDoctorModal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Doctor to Oracle</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: ADD DEPARTMENT -->
+  <div class="modal-overlay" id="addDepartmentModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>🏢 Add Hospital Department</h3>
+        <button class="modal-close" onclick="closeModal('addDepartmentModal')">&times;</button>
+      </div>
+      <form id="addDepartmentForm" onsubmit="handleDepartmentRegistration(event)">
+        <div class="form-group">
+          <label>Department Name *</label>
+          <input type="text" id="deptName" class="input-control" placeholder="e.g. Pediatrics, Dermatology, Oncology" required />
+        </div>
+        <div class="form-group">
+          <label>Location / Wing *</label>
+          <input type="text" id="deptLocation" class="input-control" placeholder="e.g. Block E, 2nd Floor" required />
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('addDepartmentModal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Department</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: BOOK APPOINTMENT -->
+  <div class="modal-overlay" id="bookAppointmentModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>📅 Schedule Doctor Appointment</h3>
+        <button class="modal-close" onclick="closeModal('bookAppointmentModal')">&times;</button>
+      </div>
+      <form id="bookAppointmentForm" onsubmit="handleAppointmentBooking(event)">
+        <div class="form-group">
+          <label>Select Patient *</label>
+          <select id="bookPatientSelect" class="input-control" required>
+            <option value="">Loading patients...</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Select Doctor *</label>
+          <select id="bookDoctorSelect" class="input-control" required>
+            <option value="">Loading doctors...</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Appointment Date *</label>
+            <input type="date" id="bookApptDate" class="input-control" required />
+          </div>
+          <div class="form-group">
+            <label>Time Slot *</label>
+            <select id="bookApptTime" class="input-control" required>
+              <option value="09:00">09:00 AM</option>
+              <option value="09:30">09:30 AM</option>
+              <option value="10:00">10:00 AM</option>
+              <option value="10:30">10:30 AM</option>
+              <option value="11:00">11:00 AM</option>
+              <option value="11:30">11:30 AM</option>
+              <option value="14:00">02:00 PM</option>
+              <option value="14:30">02:30 PM</option>
+              <option value="15:00">03:00 PM</option>
+              <option value="15:30">03:30 PM</option>
+            </select>
+          </div>
+        </div>
+        <div class="conflict-alert" id="conflictAlert" style="display: none;"></div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('bookAppointmentModal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Check Conflict & Book</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: GENERATE BILL -->
+  <div class="modal-overlay" id="createBillModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>💳 Generate Invoice & Record Payment</h3>
+        <button class="modal-close" onclick="closeModal('createBillModal')">&times;</button>
+      </div>
+      <form id="createBillForm" onsubmit="handleBillCreation(event)">
+        <div class="form-group">
+          <label>Select Appointment *</label>
+          <select id="billAppointmentSelect" class="input-control" required>
+            <option value="">Loading appointments...</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Total Billed Amount (₹) *</label>
+            <input type="number" id="billTotalAmount" class="input-control" min="1" step="0.01" placeholder="e.g. 1500" required />
+          </div>
+          <div class="form-group">
+            <label>Initial Payment (₹)</label>
+            <input type="number" id="billPaymentAmount" class="input-control" min="0" step="0.01" placeholder="e.g. 500 (Optional)" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Payment Method</label>
+          <select id="billPaymentMethod" class="input-control">
+            <option value="CASH">Cash</option>
+            <option value="CARD">Debit/Credit Card</option>
+            <option value="UPI">UPI</option>
+            <option value="BANK">Bank Transfer</option>
+          </select>
+        </div>
+        <div class="transaction-info">
+          🔒 <strong>ACID Guarantee:</strong> Bill insertion, payment recording, and balance status update execute in one atomic transaction.
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('createBillModal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Commit Transaction</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: PATIENT FULL DETAILS VIEW -->
+  <div class="modal-overlay" id="patientDetailsModal">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <h3>Patient Medical & Billing Record</h3>
+        <button class="modal-close" onclick="closeModal('patientDetailsModal')">&times;</button>
+      </div>
+      <div class="patient-profile-header" id="profileHeader">
+        <!-- Populated dynamically -->
+      </div>
+      <div class="profile-tabs-content">
+        <h4>Appointment History</h4>
+        <div class="table-responsive">
+          <table class="data-table" id="profileApptsTable">
+            <thead>
+              <tr>
+                <th>Appt ID</th>
+                <th>Doctor</th>
+                <th>Date & Time</th>
+                <th>Status</th>
+                <th>Diagnosis</th>
+              </tr>
+            </thead>
+            <tbody id="profileApptsBody"></tbody>
+          </table>
+        </div>
+
+        <h4 style="margin-top: 20px;">Billing & Payment Status</h4>
+        <div class="table-responsive">
+          <table class="data-table" id="profileBillsTable">
+            <thead>
+              <tr>
+                <th>Bill ID</th>
+                <th>Total (₹)</th>
+                <th>Paid (₹)</th>
+                <th>Balance (₹)</th>
+                <th>Date</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="profileBillsBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('patientDetailsModal')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

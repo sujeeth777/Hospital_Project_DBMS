@@ -1,0 +1,248 @@
+
+#include <stdio.h>
+#include <string.h>
+
+EXEC SQL INCLUDE SQLCA;
+
+int main(void)
+{
+    EXEC SQL BEGIN DECLARE SECTION;
+        char db_username[50];
+        char db_password[100];
+        char db_connection[100];
+
+        int bill_id;
+        int payment_id;
+
+        double bill_total;
+        double paid_so_far;
+        double payment_amount;
+        double remaining_balance;
+
+        char bill_status[16];
+        char payment_method[21];
+        char new_status[16];
+    EXEC SQL END DECLARE SECTION;
+
+    printf("====================================\n");
+    printf("   HOSPITAL MANAGEMENT SYSTEM\n");
+    printf("      BILLING & PAYMENT\n");
+    printf("====================================\n\n");
+
+    printf("Oracle username: ");
+    if (scanf("%49s", db_username) != 1)
+        return 1;
+
+    printf("Oracle password: ");
+    if (scanf("%99s", db_password) != 1)
+        return 1;
+
+    strcpy(db_connection, "localhost:1521/FREEPDB1");
+
+    EXEC SQL CONNECT :db_username
+        IDENTIFIED BY :db_password
+        USING :db_connection;
+
+    if (sqlca.sqlcode < 0)
+    {
+        printf("Connection failed: %ld\n", sqlca.sqlcode);
+        return 1;
+    }
+
+    printf("\nConnected to Oracle successfully!\n");
+    printf("\n--- Existing Bills ---\n");
+
+    EXEC SQL DECLARE bill_cursor CURSOR FOR
+        SELECT bill_id, appointment_id, total_amount, status
+        FROM bills
+        ORDER BY bill_id;
+
+    EXEC SQL OPEN bill_cursor;
+
+    if (sqlca.sqlcode < 0)
+    {
+        printf("Could not open bills: %ld\n", sqlca.sqlcode);
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    {
+        EXEC SQL BEGIN DECLARE SECTION;
+            int listed_bill_id;
+            int listed_appointment_id;
+            double listed_total;
+            char listed_status[16];
+        EXEC SQL END DECLARE SECTION;
+
+        while (1)
+        {
+            EXEC SQL FETCH bill_cursor
+                INTO :listed_bill_id,
+                     :listed_appointment_id,
+                     :listed_total,
+                     :listed_status;
+
+            if (sqlca.sqlcode == 1403)
+                break;
+
+            if (sqlca.sqlcode < 0)
+            {
+                printf("Fetch failed: %ld\n", sqlca.sqlcode);
+                EXEC SQL CLOSE bill_cursor;
+                EXEC SQL ROLLBACK WORK RELEASE;
+                return 1;
+            }
+
+            printf("Bill ID: %d | Appointment: %d | Amount: %.2f | Status: %s\n",
+                   listed_bill_id, listed_appointment_id,
+                   listed_total, listed_status);
+        }
+    }
+
+    EXEC SQL CLOSE bill_cursor;
+
+    printf("\nEnter bill ID: ");
+    if (scanf("%d", &bill_id) != 1)
+    {
+        printf("Invalid bill ID.\n");
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    EXEC SQL SELECT total_amount, status
+        INTO :bill_total, :bill_status
+        FROM bills
+        WHERE bill_id = :bill_id;
+
+    if (sqlca.sqlcode != 0)
+    {
+        printf("Bill not found. Oracle error: %ld\n", sqlca.sqlcode);
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    if (strcmp(bill_status, "PAID") == 0)
+    {
+        printf("This bill is already fully paid.\n");
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    EXEC SQL SELECT NVL(SUM(amount), 0)
+        INTO :paid_so_far
+        FROM payments
+        WHERE bill_id = :bill_id;
+
+    if (sqlca.sqlcode != 0)
+    {
+        printf("Could not calculate payments: %ld\n", sqlca.sqlcode);
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    remaining_balance = bill_total - paid_so_far;
+
+    printf("\nBill ID          : %d\n", bill_id);
+    printf("Bill total       : %.2f\n", bill_total);
+    printf("Previously paid  : %.2f\n", paid_so_far);
+    printf("Outstanding      : %.2f\n", remaining_balance);
+
+    printf("\nEnter payment ID: ");
+    if (scanf("%d", &payment_id) != 1)
+    {
+        printf("Invalid payment ID.\n");
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    printf("Enter payment amount: ");
+    if (scanf("%lf", &payment_amount) != 1)
+    {
+        printf("Invalid payment amount.\n");
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    if (payment_amount <= 0 ||
+        payment_amount > remaining_balance + 0.001)
+    {
+        printf("Invalid amount. Payment must be positive ");
+        printf("and cannot exceed the outstanding balance.\n");
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    printf("Payment method (CASH/CARD/UPI/BANK): ");
+    if (scanf("%20s", payment_method) != 1)
+    {
+        printf("Invalid payment method.\n");
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    if (strcmp(payment_method, "CASH") != 0 &&
+        strcmp(payment_method, "CARD") != 0 &&
+        strcmp(payment_method, "UPI") != 0 &&
+        strcmp(payment_method, "BANK") != 0)
+    {
+        printf("Invalid method. Use CASH, CARD, UPI, or BANK.\n");
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    EXEC SQL INSERT INTO payments
+        (payment_id, bill_id, amount, payment_date, payment_method)
+        VALUES
+        (:payment_id, :bill_id, :payment_amount,
+         SYSDATE, :payment_method);
+
+    if (sqlca.sqlcode != 0)
+    {
+        printf("Payment insert failed: %ld\n", sqlca.sqlcode);
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    if (paid_so_far + payment_amount >= bill_total - 0.001)
+        strcpy(new_status, "PAID");
+    else
+        strcpy(new_status, "PARTIAL");
+
+    EXEC SQL UPDATE bills
+        SET status = :new_status
+        WHERE bill_id = :bill_id;
+
+    if (sqlca.sqlcode != 0)
+    {
+        printf("Bill status update failed: %ld\n", sqlca.sqlcode);
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    EXEC SQL COMMIT WORK;
+
+    if (sqlca.sqlcode != 0)
+    {
+        printf("Commit failed: %ld\n", sqlca.sqlcode);
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    printf("\n====================================\n");
+    printf("       PAYMENT SUCCESSFUL\n");
+    printf("====================================\n");
+    printf("Bill ID          : %d\n", bill_id);
+    printf("Payment ID       : %d\n", payment_id);
+    printf("Payment amount   : %.2f\n", payment_amount);
+    printf("Payment method   : %s\n", payment_method);
+    printf("Total bill       : %.2f\n", bill_total);
+    printf("Total paid       : %.2f\n", paid_so_far + payment_amount);
+    printf("Remaining balance: %.2f\n",
+           bill_total - paid_so_far - payment_amount);
+    printf("Updated status   : %s\n", new_status);
+    printf("====================================\n");
+
+    EXEC SQL ROLLBACK WORK RELEASE;
+
+    return 0;
+}

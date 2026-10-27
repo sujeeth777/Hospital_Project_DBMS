@@ -1,0 +1,152 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+EXEC SQL INCLUDE SQLCA;
+
+int main(void)
+{
+    char username[50];
+    char password[100];
+
+    EXEC SQL BEGIN DECLARE SECTION;
+        char db_username[50];
+        char db_password[100];
+        char db_connection[100];
+
+        int d_id;
+        char d_name[101];
+        char d_specialization[101];
+        int d_department_id;
+        char d_phone[21];
+        char d_status[21];
+
+        int dept_id_list;
+        char dept_name_list[101];
+        char dept_loc_list[101];
+    EXEC SQL END DECLARE SECTION;
+
+    printf("\n====================================\n");
+    printf("   HOSPITAL MANAGEMENT SYSTEM       \n");
+    printf("      ADD DOCTOR MODULE (Pro*C)     \n");
+    printf("====================================\n\n");
+
+    printf("Oracle username [system]: ");
+    if (scanf("%49s", username) != 1) {
+        strcpy(username, "system");
+    }
+
+    printf("Oracle password: ");
+    if (scanf("%99s", password) != 1) {
+        printf("Invalid password input.\n");
+        return 1;
+    }
+
+    strcpy(db_username, username);
+    strcpy(db_password, password);
+    strcpy(db_connection, "localhost:1521/FREEPDB1");
+
+    EXEC SQL CONNECT :db_username
+        IDENTIFIED BY :db_password
+        USING :db_connection;
+
+    if (sqlca.sqlcode < 0) {
+        printf("\nDatabase connection failed. Oracle error: %ld\n", sqlca.sqlcode);
+        return 1;
+    }
+
+    printf("\nConnected to Oracle database successfully!\n");
+
+    /* Step 1: List existing departments so the user knows which department_id to pick */
+    printf("\n--- Available Hospital Departments ---\n");
+    printf("%-15s %-25s %-15s\n", "Department ID", "Department Name", "Location");
+    printf("----------------------------------------------------------\n");
+
+    EXEC SQL DECLARE dept_cur CURSOR FOR
+        SELECT department_id, department_name, location
+        FROM departments
+        ORDER BY department_id;
+
+    EXEC SQL OPEN dept_cur;
+
+    while (1) {
+        EXEC SQL FETCH dept_cur
+            INTO :dept_id_list, :dept_name_list, :dept_loc_list;
+
+        if (sqlca.sqlcode == 1403) break;
+        if (sqlca.sqlcode < 0) {
+            printf("Error fetching departments: %ld\n", sqlca.sqlcode);
+            break;
+        }
+
+        printf("%-15d %-25s %-15s\n", dept_id_list, dept_name_list, dept_loc_list);
+    }
+
+    EXEC SQL CLOSE dept_cur;
+
+    /* Step 2: Auto-generate new Doctor ID */
+    EXEC SQL SELECT NVL(MAX(doctor_id), 200) + 1
+        INTO :d_id
+        FROM doctors;
+
+    printf("\nAssigned New Doctor ID: %d\n", d_id);
+
+    /* Step 3: Input Doctor details */
+    {
+        int ch;
+        while ((ch = getchar()) != '\n' && ch != EOF) {}
+    }
+
+    printf("Enter Doctor Full Name (e.g. Dr. Ramesh Gupta): ");
+    if (fgets(d_name, sizeof(d_name), stdin) == NULL) return 1;
+    d_name[strcspn(d_name, "\r\n")] = 0;
+
+    printf("Enter Specialization (e.g. Cardiologist, Neurologist): ");
+    if (fgets(d_specialization, sizeof(d_specialization), stdin) == NULL) return 1;
+    d_specialization[strcspn(d_specialization, "\r\n")] = 0;
+
+    printf("Enter Department ID from list above: ");
+    if (scanf("%d", &d_department_id) != 1) {
+        printf("Invalid department ID entered.\n");
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    printf("Enter Contact Phone (10 digits): ");
+    if (scanf("%20s", d_phone) != 1) {
+        strcpy(d_phone, "9000000000");
+    }
+
+    printf("Enter Status [1: AVAILABLE, 2: BUSY, 3: ON_LEAVE]: ");
+    {
+        int status_opt = 1;
+        scanf("%d", &status_opt);
+        if (status_opt == 2) strcpy(d_status, "BUSY");
+        else if (status_opt == 3) strcpy(d_status, "ON_LEAVE");
+        else strcpy(d_status, "AVAILABLE");
+    }
+
+    /* Step 4: Insert with Referential Integrity check */
+    EXEC SQL INSERT INTO doctors (doctor_id, doctor_name, specialization, department_id, phone, status)
+        VALUES (:d_id, :d_name, :d_specialization, :d_department_id, :d_phone, :d_status);
+
+    if (sqlca.sqlcode == 0) {
+        EXEC SQL COMMIT WORK RELEASE;
+        printf("\n=======================================================\n");
+        printf(" SUCCESS: Doctor '%s' (ID: %d) added successfully!\n", d_name, d_id);
+        printf(" Status: %s | Department ID: %d\n", d_status, d_department_id);
+        printf(" Transaction committed to Oracle Database.\n");
+        printf("=======================================================\n");
+    } else {
+        printf("\n=======================================================\n");
+        printf(" FAILED to insert doctor. Oracle error code: %ld\n", sqlca.sqlcode);
+        if (sqlca.sqlcode == -2291) {
+            printf(" Reason: Department ID %d does not exist (Foreign Key violation)!\n", d_department_id);
+        }
+        printf(" Transaction rolled back.\n");
+        printf("=======================================================\n");
+        EXEC SQL ROLLBACK WORK RELEASE;
+    }
+
+    return 0;
+}

@@ -1,0 +1,75 @@
+
+#include <stdio.h>
+#include <string.h>
+
+EXEC SQL INCLUDE SQLCA;
+
+int main(void)
+{
+    char username[50];
+    char password[100];
+    char db_alias[100] = "localhost:1521/FREEPDB1";
+
+    EXEC SQL BEGIN DECLARE SECTION;
+        int patient_id;
+        char patient_name[101];
+        char phone[21];
+
+        char *db_username;
+        char *db_password;
+        char *db_connection;
+    EXEC SQL END DECLARE SECTION;
+
+    printf("=== Hospital Management System ===\n");
+
+    printf("Oracle username: ");
+    scanf("%49s", username);
+
+    printf("Oracle password: ");
+    scanf("%99s", password);
+
+    db_username = username;
+    db_password = password;
+    db_connection = db_alias;
+
+    EXEC SQL CONNECT :db_username
+        IDENTIFIED BY :db_password
+        USING :db_connection;
+
+    if (sqlca.sqlcode < 0) {
+        printf("Database connection failed. Oracle error: %ld\n",
+               sqlca.sqlcode);
+        return 1;
+    }
+
+    printf("\nConnected to Oracle successfully!\n");
+    printf("Enter patient ID: ");
+
+    if (scanf("%d", &patient_id) != 1) {
+        printf("Invalid patient ID.\n");
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    EXEC SQL SELECT patient_name, phone
+        INTO :patient_name, :phone
+        FROM patients
+        WHERE patient_id = :patient_id;
+
+    if (sqlca.sqlcode == 0) {
+        printf("\n--- Patient Details ---\n");
+        printf("Patient ID   : %d\n", patient_id);
+        printf("Patient Name : %s\n", patient_name);
+        printf("Phone        : %s\n", phone);
+    }
+    else if (sqlca.sqlcode == 1403) {
+        printf("\nNo patient found with ID %d.\n", patient_id);
+    }
+    else {
+        printf("\nQuery failed. Oracle error: %ld\n", sqlca.sqlcode);
+    }
+
+    EXEC SQL ROLLBACK WORK RELEASE;
+
+    return 0;
+}

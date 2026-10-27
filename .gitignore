@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+
+# Pro*C and MSVC build outputs
+*.exe
+*.obj
+*.lis
+appointment_book.c
+billing_payment.c
+consultation_add.c
+doctor_add.c
+hospital_reports.c
+patient_register.c
+patient_search.c

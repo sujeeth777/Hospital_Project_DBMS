@@ -1,0 +1,435 @@
+
+#include <stdio.h>
+#include <string.h>
+
+EXEC SQL INCLUDE SQLCA;
+
+EXEC SQL BEGIN DECLARE SECTION;
+    char db_user[30];
+    char db_password[50];
+    char db_connection[100];
+EXEC SQL END DECLARE SECTION;
+
+void show_patients(void);
+void show_appointments(void);
+void show_doctors(void);
+void show_consultations(void);
+void show_billing_report(void);
+void search_patient(void);
+
+int main(void)
+{
+    int choice = 0;
+    int result;
+    int ch;
+
+    strcpy(db_user, "system");
+    strcpy(db_connection, "localhost:1521/FREEPDB1");
+
+    printf("\n====================================\n");
+    printf("       HOSPITAL REPORTS MODULE\n");
+    printf("====================================\n");
+    printf("Enter Oracle password: ");
+
+    if (scanf("%49s", db_password) != 1)
+    {
+        printf("Invalid password input.\n");
+        return 1;
+    }
+
+    EXEC SQL CONNECT :db_user
+        IDENTIFIED BY :db_password
+        USING :db_connection;
+
+    if (sqlca.sqlcode != 0)
+    {
+        printf("\nDatabase connection failed.\n");
+        printf("Oracle error code: %ld\n", sqlca.sqlcode);
+        printf("%.*s\n",
+            (int)sqlca.sqlerrm.sqlerrml,
+            sqlca.sqlerrm.sqlerrmc);
+        return 1;
+    }
+
+    printf("\nDatabase connected successfully.\n");
+
+    do
+    {
+        printf("\n========== HOSPITAL REPORTS ==========\n");
+        printf("1. View All Patients\n");
+        printf("2. View All Appointments\n");
+        printf("3. View All Doctors\n");
+        printf("4. View Consultation Records\n");
+        printf("5. View Billing Report\n");
+        printf("6. Search Patient by ID\n");
+        printf("7. Exit\n");
+        printf("Enter your choice: ");
+
+        result = scanf("%d", &choice);
+
+        if (result != 1)
+        {
+            while ((ch = getchar()) != '\n' && ch != EOF) {}
+            printf("Please enter a number from 1 to 7.\n");
+            choice = 0;
+            continue;
+        }
+
+        switch (choice)
+        {
+            case 1:
+                show_patients();
+                break;
+            case 2:
+                show_appointments();
+                break;
+            case 3:
+                show_doctors();
+                break;
+            case 4:
+                show_consultations();
+                break;
+            case 5:
+                show_billing_report();
+                break;
+            case 6:
+                search_patient();
+                break;
+            case 7:
+                printf("Exiting reports module.\n");
+                break;
+            default:
+                printf("Invalid choice.\n");
+        }
+
+    } while (choice != 7);
+
+    EXEC SQL COMMIT WORK RELEASE;
+
+    printf("Database connection closed.\n");
+    return 0;
+}
+
+void show_patients(void)
+{
+    EXEC SQL BEGIN DECLARE SECTION;
+        int p_id;
+        char p_name[101];
+        char p_gender[21];
+        char p_phone[31];
+        short p_gender_ind;
+        short p_phone_ind;
+    EXEC SQL END DECLARE SECTION;
+
+    EXEC SQL DECLARE patient_cursor CURSOR FOR
+        SELECT patient_id, patient_name, gender, phone
+        FROM patients
+        ORDER BY patient_id;
+
+    EXEC SQL OPEN patient_cursor;
+
+    if (sqlca.sqlcode != 0)
+    {
+        printf("Cannot open patient report. Error: %ld\n", sqlca.sqlcode);
+        return;
+    }
+
+    printf("\n========== PATIENT REPORT ==========\n");
+    printf("%-12s %-25s %-12s %-15s\n",
+        "Patient ID", "Patient Name", "Gender", "Phone");
+
+    while (1)
+    {
+        EXEC SQL FETCH patient_cursor
+            INTO :p_id, :p_name,
+                 :p_gender:p_gender_ind,
+                 :p_phone:p_phone_ind;
+
+        if (sqlca.sqlcode == 1403)
+            break;
+
+        if (sqlca.sqlcode != 0)
+        {
+            printf("Patient fetch error: %ld\n", sqlca.sqlcode);
+            break;
+        }
+
+        printf("%-12d %-25.25s %-12s %-15s\n",
+            p_id, p_name,
+            p_gender_ind == -1 ? "-" : p_gender,
+            p_phone_ind == -1 ? "-" : p_phone);
+    }
+
+    EXEC SQL CLOSE patient_cursor;
+}
+
+void show_appointments(void)
+{
+    EXEC SQL BEGIN DECLARE SECTION;
+        int a_id;
+        char a_patient[101];
+        char a_doctor[101];
+        char a_time[30];
+        char a_status[16];
+    EXEC SQL END DECLARE SECTION;
+
+    EXEC SQL DECLARE appointment_cursor CURSOR FOR
+        SELECT a.appointment_id,
+               p.patient_name,
+               d.doctor_name,
+               TO_CHAR(a.appointment_time, 'DD-MON-YYYY HH24:MI'),
+               a.status
+        FROM appointments a, patients p, doctors d
+        WHERE a.patient_id = p.patient_id
+          AND a.doctor_id = d.doctor_id
+        ORDER BY a.appointment_time;
+
+    EXEC SQL OPEN appointment_cursor;
+
+    if (sqlca.sqlcode != 0)
+    {
+        printf("Cannot open appointment report. Error: %ld\n",
+            sqlca.sqlcode);
+        return;
+    }
+
+    printf("\n========== APPOINTMENT REPORT ==========\n");
+    printf("%-8s %-22s %-22s %-19s %-12s\n",
+        "ID", "Patient", "Doctor", "Date and Time", "Status");
+
+    while (1)
+    {
+        EXEC SQL FETCH appointment_cursor
+            INTO :a_id, :a_patient, :a_doctor, :a_time, :a_status;
+
+        if (sqlca.sqlcode == 1403)
+            break;
+
+        if (sqlca.sqlcode != 0)
+        {
+            printf("Appointment fetch error: %ld\n", sqlca.sqlcode);
+            break;
+        }
+
+        printf("%-8d %-22.22s %-22.22s %-19s %-12s\n",
+            a_id, a_patient, a_doctor, a_time, a_status);
+    }
+
+    EXEC SQL CLOSE appointment_cursor;
+}
+
+void show_doctors(void)
+{
+    EXEC SQL BEGIN DECLARE SECTION;
+        int d_id;
+        char d_name[101];
+        char d_specialization[101];
+        int d_department;
+        short d_department_ind;
+    EXEC SQL END DECLARE SECTION;
+
+    EXEC SQL DECLARE doctor_cursor CURSOR FOR
+        SELECT doctor_id, doctor_name, specialization, department_id
+        FROM doctors
+        ORDER BY doctor_id;
+
+    EXEC SQL OPEN doctor_cursor;
+
+    if (sqlca.sqlcode != 0)
+    {
+        printf("Cannot open doctor report. Error: %ld\n", sqlca.sqlcode);
+        return;
+    }
+
+    printf("\n========== DOCTOR REPORT ==========\n");
+    printf("%-10s %-25s %-25s %-12s\n",
+        "Doctor ID", "Doctor Name", "Specialization", "Department");
+
+    while (1)
+    {
+        EXEC SQL FETCH doctor_cursor
+            INTO :d_id, :d_name, :d_specialization,
+                 :d_department:d_department_ind;
+
+        if (sqlca.sqlcode == 1403)
+            break;
+
+        if (sqlca.sqlcode != 0)
+        {
+            printf("Doctor fetch error: %ld\n", sqlca.sqlcode);
+            break;
+        }
+
+        if (d_department_ind == -1)
+            printf("%-10d %-25.25s %-25.25s %-12s\n",
+                d_id, d_name, d_specialization, "-");
+        else
+            printf("%-10d %-25.25s %-25.25s %-12d\n",
+                d_id, d_name, d_specialization, d_department);
+    }
+
+    EXEC SQL CLOSE doctor_cursor;
+}
+
+void show_consultations(void)
+{
+    EXEC SQL BEGIN DECLARE SECTION;
+        int c_id;
+        int c_appointment_id;
+        char c_diagnosis[201];
+        char c_date[20];
+        short c_diagnosis_ind;
+    EXEC SQL END DECLARE SECTION;
+
+    EXEC SQL DECLARE consultation_cursor CURSOR FOR
+        SELECT consultation_id, appointment_id, diagnosis,
+               TO_CHAR(consultation_date, 'DD-MON-YYYY')
+        FROM consultations
+        ORDER BY consultation_id;
+
+    EXEC SQL OPEN consultation_cursor;
+
+    if (sqlca.sqlcode != 0)
+    {
+        printf("Cannot open consultation report. Error: %ld\n",
+            sqlca.sqlcode);
+        return;
+    }
+
+    printf("\n========== CONSULTATION REPORT ==========\n");
+    printf("%-16s %-17s %-30s %-15s\n",
+        "Consultation ID", "Appointment ID", "Diagnosis", "Date");
+
+    while (1)
+    {
+        EXEC SQL FETCH consultation_cursor
+            INTO :c_id, :c_appointment_id,
+                 :c_diagnosis:c_diagnosis_ind, :c_date;
+
+        if (sqlca.sqlcode == 1403)
+            break;
+
+        if (sqlca.sqlcode != 0)
+        {
+            printf("Consultation fetch error: %ld\n", sqlca.sqlcode);
+            break;
+        }
+
+        printf("%-16d %-17d %-30.30s %-15s\n",
+            c_id, c_appointment_id,
+            c_diagnosis_ind == -1 ? "-" : c_diagnosis,
+            c_date);
+    }
+
+    EXEC SQL CLOSE consultation_cursor;
+}
+
+void show_billing_report(void)
+{
+    EXEC SQL BEGIN DECLARE SECTION;
+        int b_id;
+        int b_appointment_id;
+        double b_total;
+        double b_paid;
+        double b_balance;
+        char b_status[16];
+    EXEC SQL END DECLARE SECTION;
+
+    EXEC SQL DECLARE billing_cursor CURSOR FOR
+        SELECT b.bill_id,
+               b.appointment_id,
+               b.total_amount,
+               NVL(SUM(p.amount), 0),
+               b.total_amount - NVL(SUM(p.amount), 0),
+               b.status
+        FROM bills b, payments p
+        WHERE b.bill_id = p.bill_id(+)
+        GROUP BY b.bill_id, b.appointment_id,
+                 b.total_amount, b.status
+        ORDER BY b.bill_id;
+
+    EXEC SQL OPEN billing_cursor;
+
+    if (sqlca.sqlcode != 0)
+    {
+        printf("Cannot open billing report. Error: %ld\n", sqlca.sqlcode);
+        return;
+    }
+
+    printf("\n========== BILLING REPORT ==========\n");
+    printf("%-10s %-13s %-12s %-12s %-12s %-12s\n",
+        "Bill ID", "Appointment", "Total", "Paid", "Balance", "Status");
+
+    while (1)
+    {
+        EXEC SQL FETCH billing_cursor
+            INTO :b_id, :b_appointment_id, :b_total,
+                 :b_paid, :b_balance, :b_status;
+
+        if (sqlca.sqlcode == 1403)
+            break;
+
+        if (sqlca.sqlcode != 0)
+        {
+            printf("Billing fetch error: %ld\n", sqlca.sqlcode);
+            break;
+        }
+
+        printf("%-10d %-13d %-12.2f %-12.2f %-12.2f %-12s\n",
+            b_id, b_appointment_id, b_total,
+            b_paid, b_balance, b_status);
+    }
+
+    EXEC SQL CLOSE billing_cursor;
+}
+
+void search_patient(void)
+{
+    EXEC SQL BEGIN DECLARE SECTION;
+        int p_id;
+        char p_name[101];
+        char p_gender[21];
+        char p_phone[31];
+        short p_name_ind;
+        short p_gender_ind;
+        short p_phone_ind;
+    EXEC SQL END DECLARE SECTION;
+
+    printf("Enter Patient ID (example 1011): ");
+
+    if (scanf("%d", &p_id) != 1)
+    {
+        int ch;
+        while ((ch = getchar()) != '\n' && ch != EOF) {}
+        printf("Invalid patient ID.\n");
+        return;
+    }
+
+    EXEC SQL SELECT patient_name, gender, phone
+        INTO :p_name:p_name_ind,
+             :p_gender:p_gender_ind,
+             :p_phone:p_phone_ind
+        FROM patients
+        WHERE patient_id = :p_id;
+
+    if (sqlca.sqlcode == 0)
+    {
+        printf("\n========== PATIENT DETAILS ==========\n");
+        printf("Patient ID : %d\n", p_id);
+        printf("Name       : %s\n",
+            p_name_ind == -1 ? "Not available" : p_name);
+        printf("Gender     : %s\n",
+            p_gender_ind == -1 ? "Not available" : p_gender);
+        printf("Phone      : %s\n",
+            p_phone_ind == -1 ? "Not available" : p_phone);
+    }
+    else if (sqlca.sqlcode == 1403)
+    {
+        printf("Patient ID %d was not found.\n", p_id);
+    }
+    else
+    {
+        printf("Patient search failed. Oracle error: %ld\n",
+            sqlca.sqlcode);
+    }
+}

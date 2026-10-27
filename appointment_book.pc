@@ -1,0 +1,203 @@
+
+#include <stdio.h>
+#include <string.h>
+
+EXEC SQL INCLUDE SQLCA;
+
+int main(void)
+{
+    char username[50];
+    char password[100];
+
+    EXEC SQL BEGIN DECLARE SECTION;
+        char db_username[50];
+        char db_password[100];
+        char db_connection[100];
+
+        int patient_id;
+        int doctor_id;
+        int appointment_id;
+        char appointment_date[11];
+        char appointment_time[6];
+        char patient_name[101];
+        char doctor_name[101];
+        char specialization[101];
+    EXEC SQL END DECLARE SECTION;
+
+    printf("====================================\n");
+    printf("   HOSPITAL MANAGEMENT SYSTEM\n");
+    printf("       APPOINTMENT BOOKING\n");
+    printf("====================================\n\n");
+
+    printf("Oracle username: ");
+    if (scanf("%49s", username) != 1) return 1;
+
+    printf("Oracle password: ");
+    if (scanf("%99s", password) != 1) return 1;
+
+    strcpy(db_username, username);
+    strcpy(db_password, password);
+    strcpy(db_connection, "localhost:1521/FREEPDB1");
+
+    EXEC SQL CONNECT :db_username
+        IDENTIFIED BY :db_password
+        USING :db_connection;
+
+    if (sqlca.sqlcode < 0) {
+        printf("\nDatabase connection failed. Error: %ld\n",
+               sqlca.sqlcode);
+        return 1;
+    }
+
+    printf("\nConnected to Oracle successfully!\n");
+
+    printf("\n--- Registered Patients ---\n");
+
+    EXEC SQL DECLARE patient_cursor CURSOR FOR
+        SELECT patient_id, patient_name
+        FROM patients
+        ORDER BY patient_id;
+
+    EXEC SQL OPEN patient_cursor;
+
+    while (1) {
+        EXEC SQL FETCH patient_cursor
+            INTO :patient_id, :patient_name;
+
+        if (sqlca.sqlcode == 1403) break;
+
+        if (sqlca.sqlcode < 0) {
+            printf("Error retrieving patients: %ld\n",
+                   sqlca.sqlcode);
+            EXEC SQL CLOSE patient_cursor;
+            EXEC SQL ROLLBACK WORK RELEASE;
+            return 1;
+        }
+
+        printf("ID: %d | Name: %s\n", patient_id, patient_name);
+    }
+
+    EXEC SQL CLOSE patient_cursor;
+
+    printf("\nEnter patient ID: ");
+    if (scanf("%d", &patient_id) != 1) {
+        printf("Invalid patient ID.\n");
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    EXEC SQL SELECT patient_name
+        INTO :patient_name
+        FROM patients
+        WHERE patient_id = :patient_id;
+
+    if (sqlca.sqlcode != 0) {
+        printf("Patient ID %d was not found.\n", patient_id);
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    printf("\nPatient selected: %s\n", patient_name);
+
+    printf("\n--- Available Doctors ---\n");
+
+    EXEC SQL DECLARE doctor_cursor CURSOR FOR
+        SELECT doctor_id, doctor_name, specialization
+        FROM doctors
+        ORDER BY doctor_id;
+
+    EXEC SQL OPEN doctor_cursor;
+
+    while (1) {
+        EXEC SQL FETCH doctor_cursor
+            INTO :doctor_id, :doctor_name, :specialization;
+
+        if (sqlca.sqlcode == 1403) break;
+
+        if (sqlca.sqlcode < 0) {
+            printf("Error retrieving doctors: %ld\n",
+                   sqlca.sqlcode);
+            EXEC SQL CLOSE doctor_cursor;
+            EXEC SQL ROLLBACK WORK RELEASE;
+            return 1;
+        }
+
+        printf("ID: %d | Dr. %s | Specialization: %s\n",
+               doctor_id, doctor_name, specialization);
+    }
+
+    EXEC SQL CLOSE doctor_cursor;
+
+    printf("\nEnter doctor ID: ");
+    if (scanf("%d", &doctor_id) != 1) {
+        printf("Invalid doctor ID.\n");
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    EXEC SQL SELECT doctor_name
+        INTO :doctor_name
+        FROM doctors
+        WHERE doctor_id = :doctor_id;
+
+    if (sqlca.sqlcode != 0) {
+        printf("Doctor ID %d was not found.\n", doctor_id);
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    printf("Selected doctor: Dr. %s\n", doctor_name);
+
+    printf("\nAppointment date (DD-MM-YYYY): ");
+    if (scanf("%10s", appointment_date) != 1) {
+        printf("Invalid date.\n");
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    printf("Appointment time (HH:MI, 24-hour): ");
+    if (scanf("%5s", appointment_time) != 1) {
+        printf("Invalid time.\n");
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    printf("Enter new appointment ID: ");
+    if (scanf("%d", &appointment_id) != 1) {
+        printf("Invalid appointment ID.\n");
+        EXEC SQL ROLLBACK WORK RELEASE;
+        return 1;
+    }
+
+    EXEC SQL INSERT INTO appointments
+        (appointment_id, patient_id, doctor_id,
+         appointment_time, status)
+        VALUES
+        (:appointment_id, :patient_id, :doctor_id,
+         TO_DATE(:appointment_date || ' ' ||
+                 :appointment_time, 'DD-MM-YYYY HH24:MI'),
+         'SCHEDULED');
+
+    if (sqlca.sqlcode == 0) {
+        EXEC SQL COMMIT WORK;
+
+        printf("\nAppointment booked successfully!\n");
+        printf("------------------------------------\n");
+        printf("Appointment ID : %d\n", appointment_id);
+        printf("Patient        : %s\n", patient_name);
+        printf("Doctor         : Dr. %s\n", doctor_name);
+        printf("Date           : %s\n", appointment_date);
+        printf("Time           : %s\n", appointment_time);
+        printf("Status         : SCHEDULED\n");
+        printf("------------------------------------\n");
+    }
+    else {
+        printf("\nAppointment booking failed.\n");
+        printf("Oracle error code: %ld\n", sqlca.sqlcode);
+        EXEC SQL ROLLBACK WORK;
+    }
+
+    EXEC SQL ROLLBACK WORK RELEASE;
+
+    return 0;
+}
