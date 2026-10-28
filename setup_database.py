@@ -126,6 +126,28 @@ def init_database():
         except Exception as e:
             print(f"Note on status column: {e}")
 
+    # Check email and password_hash columns on patients
+    try:
+        cursor.execute("SELECT email, password_hash FROM patients WHERE ROWNUM = 1")
+    except Exception:
+        print("[INFO] Adding email and password_hash columns to PATIENTS table...")
+        try:
+            cursor.execute("ALTER TABLE patients ADD (email VARCHAR2(100), password_hash VARCHAR2(255))")
+            conn.commit()
+            print("[SUCCESS] Added auth columns to patients.")
+        except Exception as e:
+            print(f"Note on patient auth columns: {e}")
+
+    # Set default password for any patients missing password_hash
+    try:
+        from werkzeug.security import generate_password_hash
+        default_hash = generate_password_hash('patient123')
+        cursor.execute("UPDATE patients SET password_hash = :1 WHERE password_hash IS NULL", [default_hash])
+        cursor.execute("UPDATE patients SET email = LOWER(REPLACE(patient_name, ' ', '')) || '@email.com' WHERE email IS NULL")
+        conn.commit()
+    except Exception as e:
+        print(f"Note setting default patient hashes: {e}")
+
     # Summary
     cursor.execute("SELECT COUNT(*) FROM patients")
     pt_cnt = cursor.fetchone()[0]

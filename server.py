@@ -16,12 +16,14 @@ import os
 import time
 import datetime
 from dotenv import load_dotenv
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, session
+from werkzeug.security import generate_password_hash, check_password_hash
 import oracledb
 
 load_dotenv()
 
 app = Flask(__name__, static_folder="static", static_url_path="")
+app.secret_key = os.getenv("SECRET_KEY", "hospital-management-patient-auth-secret-key-2026")
 
 DB_CONFIG = {
     "user": os.getenv("ORACLE_USER", "system"),
@@ -56,6 +58,507 @@ def rows_to_dicts(cursor):
                 row_dict[col_name] = val
         results.append(row_dict)
     return results
+
+def get_current_patient_id():
+    """Returns the authenticated patient ID from session or X-Patient-ID header."""
+    pid = session.get("patient_id")
+    if not pid:
+        hdr = request.headers.get("X-Patient-ID")
+        if hdr and hdr.isdigit():
+            pid = int(hdr)
+    return pid
+
+# ==========================================
+# AUTHENTICATION & PATIENT ACCOUNT PORTAL
+# ==========================================
+@app.route("/api/auth/register", methods=["POST"])
+def auth_register():
+    """
+    Registers a new patient account with encrypted password hashing.
+    """
+    data = request.json or {}
+    name = data.get("patient_name", "").strip()
+    email = data.get("email", "").strip().lower()
+    password = data.get("password", "").strip()
+    dob = data.get("date_of_birth", "").strip()
+    gender = data.get("gender", "Other").strip()
+    phone = data.get("phone", "").strip()
+    address = data.get("address", "").strip()
+
+    if not name or not password:
+        return jsonify({"success": False, "error": "Patient Name and Password are required."}), 400
+
+    if len(password) < 4:
+        return jsonify({"success": False, "error": "Password must be at least 4 characters long."}), 400
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Check if email is already taken
+        if email:
+            cursor.execute("SELECT patient_id FROM patients WHERE LOWER(email) = LOWER(:em)", em=email)
+            if cursor.fetchone():
+                conn.close()
+                return jsonify({"success": False, "error": f"An account with email '{email}' already exists. Please log in."}), 409
+
+        # Generate next patient ID
+        cursor.execute("SELECT NVL(MAX(patient_id), 1000) + 1 FROM patients")
+        new_id = cursor.fetchone()[0]
+
+        pwd_hash = generate_password_hash(password)
+
+        sql = """
+            INSERT INTO patients (patient_id, patient_name, date_of_birth, gender, phone, address, email, password_hash)
+            VALUES (:1, :2, TO_DATE(:3, 'YYYY-MM-DD'), :4, :5, :6, :7, :8)
+        """
+        cursor.execute(sql, [new_id, name, dob if dob else None, gender, phone, address, email if email else None, pwd_hash])
+        conn.commit()
+        conn.close()
+
+        session["patient_id"] = new_id
+
+        return jsonify({
+            "success": True,
+            "message": f"Account created successfully! Your Patient ID is #{new_id}.",
+            "patient": {
+                "patient_id": new_id,
+                "patient_name": name,
+                "email": email,
+                "phone": phone,
+                "gender": gender
+            }
+        }), 201
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/api/auth/login", methods=["POST"])
+def auth_login():
+    """
+    Logs in a patient using either their Email, Patient ID, or Phone, plus Password.
+    """
+    data = request.json or {}
+    identifier = data.get("identifier", "").strip()
+    password = data.get("password", "").strip()
+
+    if not identifier or not password:
+        return jsonify({"success": False, "error": "Please enter your Email/Patient ID and Password."}), 400
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        sql = """
+            SELECT patient_id, patient_name, 
+                   TO_CHAR(date_of_birth, 'YYYY-MM-DD') as dob,
+                   gender, phone, address, email, password_hash
+            FROM patients
+            WHERE LOWER(email) = LOWER(:id) 
+               OR TO_CHAR(patient_id) = :id 
+               OR phone = :id
+        """
+        cursor.execute(sql, id=identifier)
+        row = cursor.fetchone()
+        conn.close()
+
+        if not row:
+            return jsonify({"success": False, "error": "No patient account found matching that ID or Email."}), 404
+
+        patient_id, name, dob, gender, phone, address, email, stored_hash = row
+
+        # Verify password: check hash or accept default 'patient123' if not set
+        is_valid = False
+        if stored_hash:
+            is_valid = check_password_hash(stored_hash, password)
+        elif password == "patient123":
+            is_valid = True
+
+        if not is_valid:
+            return jsonify({"success": False, "error": "Incorrect password. (Default sample patient password is 'patient123')"}), 401
+
+        session["patient_id"] = patient_id
+
+        return jsonify({
+            "success": True,
+            "message": f"Welcome back, {name}!",
+            "patient": {
+                "patient_id": patient_id,
+                "patient_name": name,
+                "email": email,
+                "dob": dob,
+                "gender": gender,
+                "phone": phone,
+                "address": address
+            }
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/api/auth/logout", methods=["POST"])
+def auth_logout():
+    session.pop("patient_id", None)
+    return jsonify({"success": True, "message": "Logged out successfully."})
+
+@app.route("/api/auth/me", methods=["GET"])
+def auth_me():
+    pid = get_current_patient_id()
+    if not pid:
+        return jsonify({"authenticated": False, "patient": None})
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT patient_id, patient_name, 
+                   TO_CHAR(date_of_birth, 'YYYY-MM-DD') as dob,
+                   gender, phone, address, email
+            FROM patients
+            WHERE patient_id = :pid
+        """, pid=pid)
+        row = cursor.fetchone()
+        conn.close()
+
+        if not row:
+            session.pop("patient_id", None)
+            return jsonify({"authenticated": False, "patient": None})
+
+        return jsonify({
+            "authenticated": True,
+            "patient": {
+                "patient_id": row[0],
+                "patient_name": row[1],
+                "dob": row[2],
+                "gender": row[3],
+                "phone": row[4],
+                "address": row[5],
+                "email": row[6]
+            }
+        })
+    except Exception as e:
+        return jsonify({"authenticated": False, "error": str(e)}), 500
+
+# ==========================================
+# PATIENT SELF-SERVICE PORTAL API
+# ==========================================
+@app.route("/api/patient/dashboard", methods=["GET"])
+def get_patient_self_dashboard():
+    """
+    Comprehensive Patient Self-Service Dashboard data:
+    Fetches the logged-in patient's profile, appointments, prescriptions, and bills.
+    """
+    pid = get_current_patient_id()
+    if not pid:
+        return jsonify({"success": False, "error": "Authentication required. Please log in."}), 401
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # 1. Profile
+        cursor.execute("""
+            SELECT patient_id, patient_name, 
+                   TO_CHAR(date_of_birth, 'YYYY-MM-DD') as dob,
+                   gender, phone, address, email
+            FROM patients
+            WHERE patient_id = :p_id
+        """, p_id=pid)
+        p_row = cursor.fetchone()
+        if not p_row:
+            conn.close()
+            return jsonify({"success": False, "error": "Patient profile not found."}), 404
+
+        patient = {
+            "patient_id": p_row[0],
+            "patient_name": p_row[1],
+            "dob": p_row[2],
+            "gender": p_row[3],
+            "phone": p_row[4],
+            "address": p_row[5],
+            "email": p_row[6]
+        }
+
+        # 2. Appointments with Doctor details (INNER JOIN)
+        cursor.execute("""
+            SELECT a.appointment_id, 
+                   TO_CHAR(a.appointment_time, 'YYYY-MM-DD HH24:MI') as appt_time,
+                   a.status, d.doctor_id, d.doctor_name, d.specialization,
+                   dept.department_name, dept.location,
+                   c.consultation_id, c.diagnosis, c.consultation_notes
+            FROM appointments a
+            JOIN doctors d ON a.doctor_id = d.doctor_id
+            LEFT JOIN departments dept ON d.department_id = dept.department_id
+            LEFT JOIN consultations c ON a.appointment_id = c.appointment_id
+            WHERE a.patient_id = :p_id
+            ORDER BY a.appointment_time DESC
+        """, p_id=pid)
+        appointments = rows_to_dicts(cursor)
+
+        # 3. Prescriptions (4-table JOIN: Prescriptions -> Consultations -> Appointments -> Doctors)
+        cursor.execute("""
+            SELECT p.prescription_id, p.medicine_name, p.dosage, p.duration,
+                   c.diagnosis, TO_CHAR(c.consultation_date, 'YYYY-MM-DD') as consultation_date,
+                   d.doctor_name, d.specialization
+            FROM prescriptions p
+            JOIN consultations c ON p.consultation_id = c.consultation_id
+            JOIN appointments a ON c.appointment_id = a.appointment_id
+            JOIN doctors d ON a.doctor_id = d.doctor_id
+            WHERE a.patient_id = :p_id
+            ORDER BY p.prescription_id DESC
+        """, p_id=pid)
+        prescriptions = rows_to_dicts(cursor)
+
+        # 4. Bills & Payment History (OUTER JOIN & Aggregates)
+        cursor.execute("""
+            SELECT b.bill_id, b.appointment_id, b.total_amount,
+                   TO_CHAR(b.bill_date, 'YYYY-MM-DD') as bill_date,
+                   b.status,
+                   NVL(SUM(pay.amount), 0) as paid_amount,
+                   b.total_amount - NVL(SUM(pay.amount), 0) as balance_due,
+                   d.doctor_name,
+                   TO_CHAR(a.appointment_time, 'YYYY-MM-DD') as appt_date
+            FROM bills b
+            JOIN appointments a ON b.appointment_id = a.appointment_id
+            JOIN doctors d ON a.doctor_id = d.doctor_id
+            LEFT JOIN payments pay ON b.bill_id = pay.bill_id
+            WHERE a.patient_id = :p_id
+            GROUP BY b.bill_id, b.appointment_id, b.total_amount, b.bill_date, b.status, d.doctor_name, a.appointment_time
+            ORDER BY b.bill_id DESC
+        """, p_id=pid)
+        bills = rows_to_dicts(cursor)
+
+        # Calculate high level stats for patient
+        scheduled_count = sum(1 for a in appointments if a.get("status") == "SCHEDULED")
+        total_balance = sum(float(b.get("balance_due", 0)) for b in bills if float(b.get("balance_due", 0)) > 0)
+
+        conn.close()
+        return jsonify({
+            "success": True,
+            "patient": patient,
+            "appointments": appointments,
+            "prescriptions": prescriptions,
+            "bills": bills,
+            "stats": {
+                "total_appointments": len(appointments),
+                "scheduled_appointments": scheduled_count,
+                "total_prescriptions": len(prescriptions),
+                "total_balance_due": round(total_balance, 2)
+            }
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/api/patient/appointments/book", methods=["POST"])
+def patient_self_book_appointment():
+    """
+    Patient books an appointment for themselves with real-time conflict checking.
+    """
+    pid = get_current_patient_id()
+    if not pid:
+        return jsonify({"success": False, "error": "Please log in to book an appointment."}), 401
+
+    data = request.json or {}
+    doctor_id = data.get("doctor_id")
+    appt_time_str = data.get("appointment_time") # e.g. "2026-11-05 10:30"
+
+    if not doctor_id or not appt_time_str:
+        return jsonify({"success": False, "error": "Doctor and Appointment Time are required."}), 400
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Doctor check
+        cursor.execute("SELECT doctor_name FROM doctors WHERE doctor_id = :d_id", d_id=doctor_id)
+        d_row = cursor.fetchone()
+        if not d_row:
+            conn.close()
+            return jsonify({"success": False, "error": "Selected doctor does not exist."}), 404
+
+        # Concurrency & Conflict Prevention: Is the doctor already booked?
+        cursor.execute("""
+            SELECT appointment_id 
+            FROM appointments 
+            WHERE doctor_id = :d_id 
+              AND appointment_time = TO_DATE(:a_time, 'YYYY-MM-DD HH24:MI')
+              AND status != 'CANCELLED'
+        """, d_id=doctor_id, a_time=appt_time_str)
+        conflict = cursor.fetchone()
+
+        if conflict:
+            conn.close()
+            return jsonify({
+                "success": False,
+                "conflict": True,
+                "error": f"SCHEDULE CONFLICT: {d_row[0]} already has an appointment booked at {appt_time_str}. Please choose a different slot."
+            }), 409
+
+        # Generate appointment ID and insert
+        cursor.execute("SELECT NVL(MAX(appointment_id), 5000) + 1 FROM appointments")
+        new_appt_id = cursor.fetchone()[0]
+
+        cursor.execute("""
+            INSERT INTO appointments (appointment_id, patient_id, doctor_id, appointment_time, status)
+            VALUES (:1, :2, :3, TO_DATE(:4, 'YYYY-MM-DD HH24:MI'), 'SCHEDULED')
+        """, [new_appt_id, pid, doctor_id, appt_time_str])
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            "success": True,
+            "message": f"Appointment booked successfully with {d_row[0]} at {appt_time_str}! (Appointment ID: #{new_appt_id})",
+            "appointment_id": new_appt_id
+        }), 201
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/api/patient/appointments/<int:appointment_id>/cancel", methods=["PATCH"])
+def patient_cancel_appointment(appointment_id):
+    """
+    Patient cancels their own scheduled appointment.
+    """
+    pid = get_current_patient_id()
+    if not pid:
+        return jsonify({"success": False, "error": "Please log in."}), 401
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Check ownership and status
+        cursor.execute("SELECT status FROM appointments WHERE appointment_id = :aid AND patient_id = :pid", aid=appointment_id, pid=pid)
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"success": False, "error": "Appointment not found or does not belong to your account."}), 404
+
+        if row[0] == "CANCELLED":
+            conn.close()
+            return jsonify({"success": False, "error": "Appointment is already cancelled."}), 400
+
+        cursor.execute("UPDATE appointments SET status = 'CANCELLED' WHERE appointment_id = :aid", aid=appointment_id)
+        conn.commit()
+        conn.close()
+
+        return jsonify({"success": True, "message": f"Appointment #{appointment_id} has been cancelled successfully."})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/api/patient/bills/<int:bill_id>/pay", methods=["POST"])
+def patient_pay_bill_online(bill_id):
+    """
+    Patient pays their bill online (UPI / Card / Net Banking) in an ACID transaction.
+    """
+    pid = get_current_patient_id()
+    if not pid:
+        return jsonify({"success": False, "error": "Please log in."}), 401
+
+    data = request.json or {}
+    amount = float(data.get("amount", 0))
+    payment_method = data.get("payment_method", "UPI").upper()
+
+    if amount <= 0:
+        return jsonify({"success": False, "error": "Payment amount must be greater than 0."}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Check bill ownership and current status
+        cursor.execute("""
+            SELECT b.total_amount, b.status, NVL(SUM(p.amount), 0) as paid
+            FROM bills b
+            JOIN appointments a ON b.appointment_id = a.appointment_id
+            LEFT JOIN payments p ON b.bill_id = p.bill_id
+            WHERE b.bill_id = :bid AND a.patient_id = :pid
+            GROUP BY b.total_amount, b.status
+        """, bid=bill_id, pid=pid)
+        row = cursor.fetchone()
+
+        if not row:
+            conn.close()
+            return jsonify({"success": False, "error": "Bill not found or does not belong to you."}), 404
+
+        total_amount, current_status, paid_so_far = float(row[0]), row[1], float(row[2])
+        remaining = total_amount - paid_so_far
+
+        if remaining <= 0 or current_status == "PAID":
+            conn.close()
+            return jsonify({"success": False, "error": "This bill is already fully paid!"}), 400
+
+        if amount > remaining:
+            amount = remaining # Cap payment to balance due
+
+        # Generate payment ID
+        cursor.execute("SELECT NVL(MAX(payment_id), 9000) + 1 FROM payments")
+        new_pay_id = cursor.fetchone()[0]
+
+        # Insert Payment
+        cursor.execute("""
+            INSERT INTO payments (payment_id, bill_id, amount, payment_date, payment_method)
+            VALUES (:1, :2, :3, SYSDATE, :4)
+        """, [new_pay_id, bill_id, amount, payment_method])
+
+        new_total_paid = paid_so_far + amount
+        new_balance = round(total_amount - new_total_paid, 2)
+        new_status = "PAID" if new_balance <= 0 else "PARTIAL"
+
+        cursor.execute("UPDATE bills SET status = :1 WHERE bill_id = :2", [new_status, bill_id])
+
+        # Commit ACID transaction
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            "success": True,
+            "message": f"Payment of ₹{amount:.2f} via {payment_method} successful! Payment ID: #{new_pay_id}.",
+            "payment_id": new_pay_id,
+            "bill_status": new_status,
+            "remaining_balance": new_balance
+        })
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({"success": False, "error": f"Payment failed / transaction rolled back: {str(e)}"}), 500
+
+@app.route("/api/patient/profile", methods=["PUT"])
+def patient_update_profile():
+    """Patient updates their contact phone, address, or password."""
+    pid = get_current_patient_id()
+    if not pid:
+        return jsonify({"success": False, "error": "Please log in."}), 401
+
+    data = request.json or {}
+    phone = data.get("phone", "").strip()
+    address = data.get("address", "").strip()
+    new_password = data.get("password", "").strip()
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        if new_password:
+            if len(new_password) < 4:
+                conn.close()
+                return jsonify({"success": False, "error": "New password must be at least 4 characters."}), 400
+            pwd_hash = generate_password_hash(new_password)
+            cursor.execute("""
+                UPDATE patients 
+                SET phone = NVL(:1, phone), address = NVL(:2, address), password_hash = :3
+                WHERE patient_id = :4
+            """, [phone if phone else None, address if address else None, pwd_hash, pid])
+        else:
+            cursor.execute("""
+                UPDATE patients 
+                SET phone = NVL(:1, phone), address = NVL(:2, address)
+                WHERE patient_id = :3
+            """, [phone if phone else None, address if address else None, pid])
+
+        conn.commit()
+        conn.close()
+        return jsonify({"success": True, "message": "Profile updated successfully!"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route("/")
 def index():
@@ -261,6 +764,9 @@ def register_patient():
     gender = data.get("gender", "Other").strip()
     phone = data.get("phone", "").strip()
     address = data.get("address", "").strip()
+    email = data.get("email", "").strip().lower() or None
+    password = data.get("password", "").strip() or "patient123"
+    pwd_hash = generate_password_hash(password)
 
     if not name:
         return jsonify({"success": False, "error": "Patient name is required."}), 400
@@ -274,10 +780,10 @@ def register_patient():
         new_id = cursor.fetchone()[0]
 
         sql = """
-            INSERT INTO patients (patient_id, patient_name, date_of_birth, gender, phone, address)
-            VALUES (:1, :2, TO_DATE(:3, 'YYYY-MM-DD'), :4, :5, :6)
+            INSERT INTO patients (patient_id, patient_name, date_of_birth, gender, phone, address, email, password_hash)
+            VALUES (:1, :2, TO_DATE(:3, 'YYYY-MM-DD'), :4, :5, :6, :7, :8)
         """
-        cursor.execute(sql, [new_id, name, dob if dob else None, gender, phone, address])
+        cursor.execute(sql, [new_id, name, dob if dob else None, gender, phone, address, email, pwd_hash])
         conn.commit()
         conn.close()
 

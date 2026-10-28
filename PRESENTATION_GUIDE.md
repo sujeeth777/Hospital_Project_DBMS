@@ -35,7 +35,22 @@ When your faculty asks you to demonstrate the project, follow this exact sequenc
 
 ---
 
-### Step 3: DBMS Query Explorer (1 minute)
+---
+
+### Step 3: Patient Authentication & Self-Service Health Portal (1.5 minutes)
+- **Action:** In the top navigation bar, click **Switch to Patient Portal**.
+- **Action:** Click **Patient Login**:
+  - Enter Patient ID `1001` (or `rahulsharma@email.com`) with Password `patient123`.
+- **What to show & say:**
+  > *"We also engineered a secure Patient Self-Service Portal demonstrating role-based database access and session security:"*
+  1. **Personalized Health Summary:** Show Rahul's appointments, digital prescriptions (4-table join: `PRESCRIPTIONS` $\to$ `CONSULTATIONS` $\to$ `APPOINTMENTS` $\to$ `PATIENTS`), and current outstanding invoice balance.
+  2. **Self-Booking & Conflict Interception:** Click **Book & Manage Appointments**, pick a doctor/time slot, and demonstrate self-booking.
+  3. **Online ACID Bill Settlement:** Click **Bills & Pay Online**, select unpaid bill 9005 (or any balance), click **Pay Online**, choose UPI/Card, and submit.
+  > *"The payment is processed as an atomic transaction that registers the payment row, updates the bill status to PAID, and commits to Oracle."*
+
+---
+
+### Step 4: DBMS Query Explorer (1 minute)
 - **Action:** Click the **DBMS Query Explorer** tab.
 - Click **3. LEFT OUTER JOIN & Workload Aggregation**:
   - Show how doctors with 0 appointments still appear in the list without data loss.
@@ -46,7 +61,7 @@ When your faculty asks you to demonstrate the project, follow this exact sequenc
 
 ---
 
-### Step 4: The Embedded SQL (Pro*C) Core (1 minute)
+### Step 5: The Embedded SQL (Pro*C) Core (1 minute)
 - **Action:** Open PowerShell and run:
   ```powershell
   cd path\to\HospitalProject
@@ -160,3 +175,6 @@ If you need to make PowerPoint slides, here is the recommended 8-slide structure
 
 10. **Q: Why didn't you use Supabase or SQLite?**
     - **A:** Supabase uses HTTP APIs / database drivers rather than precompiled Embedded SQL. Oracle Database paired with the Pro*C precompiler fulfills the academic Embedded SQL syllabus requirement.
+
+11. **Q: How does the system handle Patient Authentication and data security?**
+    - **A:** Passwords are never stored in plaintext. They are salted and cryptographically hashed using `scrypt` in the `PATIENTS.PASSWORD_HASH` column. During authentication, the user can provide their email, patient ID, or phone number. When verified, a secure server-side session binds the patient's authenticated identity, ensuring patients can only view and mutate their own medical records, bookings, and billing transactions.

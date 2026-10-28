@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hospital Management System — Oracle DBMS & Embedded SQL</title>
+  <title>Hospital Management System & Patient Self-Service Portal</title>
   <link rel="stylesheet" href="style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -16,28 +16,52 @@
     <div class="nav-brand">
       <div class="logo-icon">🏥</div>
       <div class="brand-text">
-        <span class="system-title">MediCore Hospital Management</span>
-        <span class="system-subtitle">Oracle 23ai • Embedded SQL (Pro*C) • 3rd Year CSE DBMS Project</span>
+        <span class="system-title">MediCore Hospital & Patient Portal</span>
+        <span class="system-subtitle">Oracle 23ai • Embedded SQL (Pro*C) • Role-Based Auth</span>
       </div>
     </div>
 
-    <!-- Quick Patient Search Bar -->
-    <div class="header-search">
+    <!-- Quick Patient Search Bar (Admin Mode) -->
+    <div class="header-search" id="headerAdminSearch">
       <span class="search-icon">🔍</span>
-      <input type="text" id="topSearchInput" placeholder="Quick Patient Search (Enter ID e.g. 1001 or Name)..." />
+      <input type="text" id="topSearchInput" placeholder="Staff Patient Search (Enter ID e.g. 1001 or Name)..." />
       <button class="btn btn-primary btn-sm" id="topSearchBtn">Search</button>
     </div>
 
+    <!-- Top Right Nav & Authentication Controls -->
     <div class="nav-right">
+      <!-- Mode Switcher Pill -->
+      <button class="btn btn-mode-toggle btn-sm" id="btnToggleAppMode" onclick="toggleAppMode()">
+        <span id="modeToggleIcon">👤</span>
+        <span id="modeToggleText">Switch to Patient Portal</span>
+      </button>
+
+      <!-- Auth State Display -->
+      <div class="auth-box" id="authNavBox">
+        <button class="btn btn-primary btn-sm" id="btnOpenAuthModal" onclick="openModal('patientAuthModal')">
+          🔐 Patient Login
+        </button>
+        <div id="loggedInUserBadge" class="logged-in-pill" style="display: none;">
+          <span class="user-avatar">👤</span>
+          <div class="user-pill-info">
+            <span class="user-pill-name" id="userDisplayName">Patient</span>
+            <span class="user-pill-role">Authenticated</span>
+          </div>
+          <button class="btn-logout" onclick="handleLogout()" title="Log Out">🚪</button>
+        </div>
+      </div>
+
       <div class="status-badge" id="dbStatusBadge">
         <span class="status-dot online"></span>
-        <span class="status-text">Oracle 23ai Connected</span>
+        <span class="status-text">Oracle 23ai</span>
       </div>
     </div>
   </header>
 
-  <!-- Main Container with Sidebar + Content -->
-  <div class="app-layout">
+  <!-- ======================================================== -->
+  <!-- VIEW 1: HOSPITAL ADMIN & STAFF VIEW                      -->
+  <!-- ======================================================== -->
+  <div class="app-layout" id="adminLayout">
     <aside class="sidebar">
       <nav class="sidebar-menu">
         <button class="nav-item active" data-tab="overview">
@@ -72,7 +96,7 @@
 
       <div class="sidebar-footer">
         <div class="footer-title">Academic Context</div>
-        <div class="footer-text">Demonstrates Relational Algebra, Normalization (3NF), ACID Transactions, Host Variables & Precompiled C.</div>
+        <div class="footer-text">Demonstrates Relational Algebra, 3NF Normalization, ACID Transactions, Host Variables & Pro*C Precompiled C.</div>
       </div>
     </aside>
 
@@ -158,13 +182,16 @@
             </div>
             <div class="card-body concept-pills">
               <div class="concept-item">
+                <strong>Patient Authentication & Roles:</strong> Encrypted password hashing with self-service booking & payment capabilities.
+              </div>
+              <div class="concept-item">
                 <strong>Referential Integrity:</strong> Foreign keys link Appointments ➔ Patients & Doctors, and Doctors ➔ Departments.
               </div>
               <div class="concept-item">
-                <strong>Conflict Prevention:</strong> Prevents overlapping appointment booking slots.
+                <strong>Conflict Prevention:</strong> Prevents overlapping appointment booking slots under concurrent usage.
               </div>
               <div class="concept-item">
-                <strong>ACID Transactions:</strong> Atomic bill generation and payment commit/rollback.
+                <strong>ACID Transactions:</strong> Atomic bill generation and online payment commit/rollback.
               </div>
               <div class="concept-item">
                 <strong>Embedded SQL (Pro*C):</strong> Direct EXEC SQL execution in C with host variables and cursors.
@@ -204,12 +231,13 @@
                   <th>Date of Birth</th>
                   <th>Gender</th>
                   <th>Phone</th>
+                  <th>Email</th>
                   <th>Address</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody id="patientsTableBody">
-                <tr><td colspan="7" class="loading-cell">Loading patients from Oracle...</td></tr>
+                <tr><td colspan="8" class="loading-cell">Loading patients from Oracle...</td></tr>
               </tbody>
             </table>
           </div>
@@ -243,9 +271,9 @@
                 <span class="dept-total-badge" id="allDeptsCount">0 Doctors</span>
               </div>
               <div class="dept-status-breakdown">
-                <span class="status-chip chip-avail" id="allAvailCount">🟢 0 Available</span>
+                <span class="status-chip chip-avail" id="allAvailCount">🟢 0 Avail</span>
                 <span class="status-chip chip-busy" id="allBusyCount">🟡 0 Busy</span>
-                <span class="status-chip chip-leave" id="allLeaveCount">🔴 0 On Leave</span>
+                <span class="status-chip chip-leave" id="allLeaveCount">🔴 0 Leave</span>
               </div>
             </div>
 
@@ -455,11 +483,460 @@
     </main>
   </div>
 
-  <!-- MODAL: REGISTER PATIENT -->
+
+  <!-- ======================================================== -->
+  <!-- VIEW 2: PATIENT SELF-SERVICE HEALTH PORTAL               -->
+  <!-- ======================================================== -->
+  <div class="app-layout" id="patientPortalLayout" style="display: none;">
+    <aside class="sidebar portal-sidebar">
+      <div class="portal-user-card" id="portalSidebarUserCard">
+        <div class="avatar-large">👤</div>
+        <div class="user-meta">
+          <h4 id="portalPatientName">Patient Name</h4>
+          <span class="user-id-badge" id="portalPatientIdBadge">ID: #1001</span>
+        </div>
+      </div>
+
+      <nav class="sidebar-menu">
+        <button class="portal-nav-item active" data-portal-tab="my-overview">
+          <span class="icon">📊</span>
+          <span class="label">My Health Overview</span>
+        </button>
+        <button class="portal-nav-item" data-portal-tab="my-appointments">
+          <span class="icon">📅</span>
+          <span class="label">Book & Appointments</span>
+        </button>
+        <button class="portal-nav-item" data-portal-tab="my-prescriptions">
+          <span class="icon">💊</span>
+          <span class="label">Prescriptions & Records</span>
+        </button>
+        <button class="portal-nav-item" data-portal-tab="my-billing">
+          <span class="icon">💳</span>
+          <span class="label">My Bills & Pay Online</span>
+        </button>
+        <button class="portal-nav-item" data-portal-tab="my-profile">
+          <span class="icon">⚙️</span>
+          <span class="label">Profile & Security</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <button class="btn btn-outline btn-block btn-sm" onclick="toggleAppMode()">
+          🏥 Switch to Hospital Admin
+        </button>
+      </div>
+    </aside>
+
+    <main class="main-content">
+
+      <!-- PORTAL TAB 1: MY OVERVIEW -->
+      <section id="portal-tab-my-overview" class="portal-tab-pane active">
+        <div class="portal-welcome-banner">
+          <div>
+            <h2 id="portalGreeting">Welcome back!</h2>
+            <p id="portalGreetingSub">Here is your personal health overview, upcoming appointments, and pending balance.</p>
+          </div>
+          <div class="portal-welcome-actions">
+            <button class="btn btn-primary" onclick="switchPortalTab('my-appointments')">📅 Book Doctor Appointment</button>
+            <button class="btn btn-secondary" onclick="switchPortalTab('my-billing')">💳 Pay Bills</button>
+          </div>
+        </div>
+
+        <!-- Patient Health KPIs -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon appt-icon">📅</div>
+            <div class="stat-body">
+              <span class="stat-label">Upcoming Appointments</span>
+              <span class="stat-val" id="portalStatUpcoming">0</span>
+              <span class="stat-sub">Active Scheduled Visits</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon patient-icon">🏥</div>
+            <div class="stat-body">
+              <span class="stat-label">Total Visits</span>
+              <span class="stat-val" id="portalStatVisits">0</span>
+              <span class="stat-sub">Completed Doctor Visits</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon doctor-icon">💊</div>
+            <div class="stat-body">
+              <span class="stat-label">Active Prescriptions</span>
+              <span class="stat-val" id="portalStatPrescriptions">0</span>
+              <span class="stat-sub">Prescribed Medicines</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon revenue-icon">💰</div>
+            <div class="stat-body">
+              <span class="stat-label">Outstanding Dues</span>
+              <span class="stat-val" id="portalStatDues" style="color: #b91c1c;">₹0.00</span>
+              <span class="stat-sub">Pending Medical Invoices</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Upcoming Appointments Card -->
+        <div class="content-card">
+          <div class="card-header">
+            <h3>📅 Upcoming Scheduled Appointments</h3>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Appt ID</th>
+                  <th>Doctor</th>
+                  <th>Department & Location</th>
+                  <th>Date & Time</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="portalUpcomingApptsBody">
+                <tr><td colspan="6" class="loading-cell">Loading your appointments...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- PORTAL TAB 2: MY APPOINTMENTS & SELF-BOOKING -->
+      <section id="portal-tab-my-appointments" class="portal-tab-pane">
+        <div class="section-header">
+          <div>
+            <h2>Book Doctor Appointment</h2>
+            <p class="section-desc">Choose your doctor, pick your preferred date and time, and book instantly with live conflict checking.</p>
+          </div>
+        </div>
+
+        <!-- Self Booking Form Card -->
+        <div class="content-card">
+          <div class="card-header">
+            <h3>📅 Select Doctor & Appointment Slot</h3>
+          </div>
+          <div class="card-body">
+            <form id="patientSelfBookForm" onsubmit="handlePatientSelfBooking(event)">
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Select Department *</label>
+                  <select id="portalBookDeptSelect" class="input-control" onchange="filterPortalDoctorsByDept()" required>
+                    <option value="">-- Choose Department --</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>Select Doctor *</label>
+                  <select id="portalBookDoctorSelect" class="input-control" required>
+                    <option value="">-- Choose Doctor --</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Appointment Date *</label>
+                  <input type="date" id="portalBookDate" class="input-control" required />
+                </div>
+                <div class="form-group">
+                  <label>Time Slot *</label>
+                  <select id="portalBookTime" class="input-control" required>
+                    <option value="09:00">09:00 AM</option>
+                    <option value="09:30">09:30 AM</option>
+                    <option value="10:00">10:00 AM</option>
+                    <option value="10:30">10:30 AM</option>
+                    <option value="11:00">11:00 AM</option>
+                    <option value="11:30">11:30 AM</option>
+                    <option value="14:00">02:00 PM</option>
+                    <option value="14:30">02:30 PM</option>
+                    <option value="15:00">03:00 PM</option>
+                    <option value="15:30">03:30 PM</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="conflict-alert" id="portalConflictAlert" style="display: none;"></div>
+
+              <button type="submit" class="btn btn-primary">
+                ✓ Confirm & Book Appointment
+              </button>
+            </form>
+          </div>
+        </div>
+
+        <!-- All My Appointments History -->
+        <div class="content-card">
+          <div class="card-header">
+            <h3>📋 My Complete Appointment History</h3>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Appt ID</th>
+                  <th>Doctor</th>
+                  <th>Specialization</th>
+                  <th>Department</th>
+                  <th>Date & Time</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="portalAllApptsBody">
+                <tr><td colspan="7" class="loading-cell">Loading appointment history...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- PORTAL TAB 3: PRESCRIPTIONS & DIAGNOSES -->
+      <section id="portal-tab-my-prescriptions" class="portal-tab-pane">
+        <div class="section-header">
+          <div>
+            <h2>My Prescriptions & Medical Consultations</h2>
+            <p class="section-desc">View doctor diagnoses, clinical consultation notes, and prescribed medications.</p>
+          </div>
+        </div>
+
+        <div id="portalPrescriptionsList" class="prescriptions-grid">
+          <!-- Populated dynamically -->
+        </div>
+      </section>
+
+      <!-- PORTAL TAB 4: MY BILLS & PAY ONLINE -->
+      <section id="portal-tab-my-billing" class="portal-tab-pane">
+        <div class="section-header">
+          <div>
+            <h2>My Medical Invoices & Online Payments</h2>
+            <p class="section-desc">Settle hospital bills securely via UPI, Card, or Net Banking with instant ACID transaction confirmation.</p>
+          </div>
+        </div>
+
+        <div class="content-card">
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Bill ID</th>
+                  <th>Appointment Details</th>
+                  <th>Total Billed</th>
+                  <th>Amount Paid</th>
+                  <th>Balance Due</th>
+                  <th>Bill Date</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="portalBillsTableBody">
+                <tr><td colspan="8" class="loading-cell">Loading invoices...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- PORTAL TAB 5: PROFILE & SETTINGS -->
+      <section id="portal-tab-my-profile" class="portal-tab-pane">
+        <div class="section-header">
+          <div>
+            <h2>Account & Profile Settings</h2>
+            <p class="section-desc">Manage your contact information and login credentials.</p>
+          </div>
+        </div>
+
+        <div class="content-card" style="max-width: 650px;">
+          <div class="card-header">
+            <h3>👤 Personal Information</h3>
+          </div>
+          <div class="card-body">
+            <form id="portalProfileForm" onsubmit="handlePortalProfileUpdate(event)">
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Patient ID (Permanent)</label>
+                  <input type="text" id="portalProfId" class="input-control" disabled />
+                </div>
+                <div class="form-group">
+                  <label>Full Name</label>
+                  <input type="text" id="portalProfName" class="input-control" disabled />
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Email Address</label>
+                  <input type="email" id="portalProfEmail" class="input-control" disabled />
+                </div>
+                <div class="form-group">
+                  <label>Date of Birth</label>
+                  <input type="text" id="portalProfDob" class="input-control" disabled />
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Contact Phone Number *</label>
+                <input type="tel" id="portalProfPhone" class="input-control" required />
+              </div>
+              <div class="form-group">
+                <label>Residential Address</label>
+                <input type="text" id="portalProfAddress" class="input-control" />
+              </div>
+              <div class="form-group">
+                <label>New Password (leave empty to keep current password)</label>
+                <input type="password" id="portalProfPassword" class="input-control" placeholder="••••••••" minlength="4" />
+              </div>
+
+              <button type="submit" class="btn btn-primary">
+                💾 Save Changes
+              </button>
+            </form>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+
+  <!-- ======================================================== -->
+  <!-- MODALS                                                   -->
+  <!-- ======================================================== -->
+
+  <!-- MODAL: PATIENT AUTH (LOGIN / SIGN UP) -->
+  <div class="modal-overlay" id="patientAuthModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>🔐 Patient Portal Access</h3>
+        <button class="modal-close" onclick="closeModal('patientAuthModal')">&times;</button>
+      </div>
+
+      <!-- Auth Tabs: Login vs Register -->
+      <div class="auth-tabs-header">
+        <button class="auth-tab-btn active" id="btnTabLogin" onclick="switchAuthTab('login')">Existing Patient Login</button>
+        <button class="auth-tab-btn" id="btnTabRegister" onclick="switchAuthTab('register')">New Patient Sign Up</button>
+      </div>
+
+      <!-- Form 1: Login -->
+      <form id="patientLoginForm" onsubmit="handlePatientLogin(event)">
+        <div class="form-group">
+          <label>Email Address, Patient ID, or Phone *</label>
+          <input type="text" id="loginIdentifier" class="input-control" placeholder="e.g. 1001 or rahulsharma@email.com" required />
+        </div>
+        <div class="form-group">
+          <label>Password *</label>
+          <input type="password" id="loginPassword" class="input-control" placeholder="Enter password (default: patient123)" required />
+        </div>
+        <div class="demo-login-hint">
+          💡 <strong>Demo Credentials:</strong> ID: <code>1001</code> | Password: <code>patient123</code> (or ID <code>1002</code> / <code>1003</code>)
+        </div>
+        <div class="auth-error-alert" id="loginErrorAlert" style="display: none;"></div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('patientAuthModal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Log In to Portal</button>
+        </div>
+      </form>
+
+      <!-- Form 2: Register -->
+      <form id="patientRegisterForm" onsubmit="handlePatientSelfRegister(event)" style="display: none;">
+        <div class="form-group">
+          <label>Full Patient Name *</label>
+          <input type="text" id="authRegName" class="input-control" placeholder="e.g. Rahul Sharma" required />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Email Address</label>
+            <input type="email" id="authRegEmail" class="input-control" placeholder="name@email.com" />
+          </div>
+          <div class="form-group">
+            <label>Password *</label>
+            <input type="password" id="authRegPassword" class="input-control" placeholder="Min 4 characters" minlength="4" required />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Date of Birth</label>
+            <input type="date" id="authRegDOB" class="input-control" />
+          </div>
+          <div class="form-group">
+            <label>Gender</label>
+            <select id="authRegGender" class="input-control">
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Contact Phone</label>
+          <input type="tel" id="authRegPhone" class="input-control" placeholder="10-digit mobile number" />
+        </div>
+        <div class="form-group">
+          <label>Address</label>
+          <input type="text" id="authRegAddress" class="input-control" placeholder="City or Street Address" />
+        </div>
+        <div class="auth-error-alert" id="registerErrorAlert" style="display: none;"></div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('patientAuthModal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Account</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: PATIENT PAY ONLINE -->
+  <div class="modal-overlay" id="patientPayModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>💳 Settle Medical Invoice Online</h3>
+        <button class="modal-close" onclick="closeModal('patientPayModal')">&times;</button>
+      </div>
+      <form id="patientPayForm" onsubmit="handlePatientPaymentSubmit(event)">
+        <input type="hidden" id="payModalBillId" />
+        <div class="invoice-summary-box">
+          <div class="summary-line"><span>Invoice Reference:</span> <strong id="payModalBillRef">#9001</strong></div>
+          <div class="summary-line"><span>Total Billed:</span> <strong id="payModalBillTotal">₹1000.00</strong></div>
+          <div class="summary-line"><span>Remaining Due:</span> <strong id="payModalBillDue" style="color:#b91c1c;">₹600.00</strong></div>
+        </div>
+
+        <div class="form-group">
+          <label>Amount to Pay (₹) *</label>
+          <input type="number" id="payModalAmount" class="input-control" min="1" step="0.01" required />
+        </div>
+
+        <div class="form-group">
+          <label>Choose Payment Gateway Method *</label>
+          <div class="payment-method-selector">
+            <label class="pay-option">
+              <input type="radio" name="payMethod" value="UPI" checked />
+              <span class="pay-label">⚡ UPI (GPay / PhonePe / Paytm)</span>
+            </label>
+            <label class="pay-option">
+              <input type="radio" name="payMethod" value="CARD" />
+              <span class="pay-label">💳 Debit / Credit Card</span>
+            </label>
+            <label class="pay-option">
+              <input type="radio" name="payMethod" value="BANK" />
+              <span class="pay-label">🏛️ Net Banking</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="transaction-info">
+          🔒 <strong>ACID Guarantee:</strong> Your payment updates the Oracle database atomically, adjusting your ledger balance and committing changes.
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('patientPayModal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Authorize & Pay</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: REGISTER PATIENT (ADMIN) -->
   <div class="modal-overlay" id="registerPatientModal">
     <div class="modal-card">
       <div class="modal-header">
-        <h3>➕ Register New Patient</h3>
+        <h3>➕ Register New Patient (Admin)</h3>
         <button class="modal-close" onclick="closeModal('registerPatientModal')">&times;</button>
       </div>
       <form id="registerPatientForm" onsubmit="handlePatientRegistration(event)">
@@ -479,6 +956,16 @@
               <option value="Female">Female</option>
               <option value="Other">Other</option>
             </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Email Address</label>
+            <input type="email" id="regPatientEmail" class="input-control" placeholder="patient@email.com" />
+          </div>
+          <div class="form-group">
+            <label>Password (for portal login)</label>
+            <input type="text" id="regPatientPassword" class="input-control" placeholder="Default: patient123" />
           </div>
         </div>
         <div class="form-group">
@@ -511,7 +998,7 @@
         </div>
         <div class="form-group">
           <label>Medical Specialization *</label>
-          <input type="text" id="docSpecialization" class="input-control" placeholder="e.g. Pediatrician, Dermatologist, ENT Specialist" required />
+          <input type="text" id="docSpecialization" class="input-control" placeholder="e.g. Pediatrician, Dermatologist" required />
         </div>
         <div class="form-row">
           <div class="form-group">
@@ -565,11 +1052,11 @@
     </div>
   </div>
 
-  <!-- MODAL: BOOK APPOINTMENT -->
+  <!-- MODAL: BOOK APPOINTMENT (ADMIN) -->
   <div class="modal-overlay" id="bookAppointmentModal">
     <div class="modal-card">
       <div class="modal-header">
-        <h3>📅 Schedule Doctor Appointment</h3>
+        <h3>📅 Schedule Doctor Appointment (Admin)</h3>
         <button class="modal-close" onclick="closeModal('bookAppointmentModal')">&times;</button>
       </div>
       <form id="bookAppointmentForm" onsubmit="handleAppointmentBooking(event)">
@@ -615,7 +1102,7 @@
     </div>
   </div>
 
-  <!-- MODAL: GENERATE BILL -->
+  <!-- MODAL: GENERATE BILL (ADMIN) -->
   <div class="modal-overlay" id="createBillModal">
     <div class="modal-card">
       <div class="modal-header">
@@ -636,7 +1123,7 @@
           </div>
           <div class="form-group">
             <label>Initial Payment (₹)</label>
-            <input type="number" id="billPaymentAmount" class="input-control" min="0" step="0.01" placeholder="e.g. 500 (Optional)" />
+            <input type="number" id="billPaymentAmount" class="input-control" min="0" step="0.01" placeholder="e.g. 500" />
           </div>
         </div>
         <div class="form-group">
@@ -659,7 +1146,7 @@
     </div>
   </div>
 
-  <!-- MODAL: PATIENT FULL DETAILS VIEW -->
+  <!-- MODAL: PATIENT FULL DETAILS VIEW (ADMIN) -->
   <div class="modal-overlay" id="patientDetailsModal">
     <div class="modal-card modal-lg">
       <div class="modal-header">

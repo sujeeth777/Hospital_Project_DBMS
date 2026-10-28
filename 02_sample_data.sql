@@ -22,29 +22,29 @@ VALUES (40, 'General Medicine', 'Block D');
 
 
 -- 2. PATIENTS
-INSERT INTO patients
+INSERT INTO patients (patient_id, patient_name, date_of_birth, gender, phone, address, email, password_hash)
 VALUES (1001, 'Rahul Sharma', DATE '2002-05-14',
-        'Male', '9876501001', 'Chennai');
+        'Male', '9876501001', 'Chennai', 'rahulsharma@email.com', 'scrypt:32768:8:1');
 
-INSERT INTO patients
+INSERT INTO patients (patient_id, patient_name, date_of_birth, gender, phone, address, email, password_hash)
 VALUES (1002, 'Priya Kumar', DATE '2001-11-22',
-        'Female', '9876501002', 'Coimbatore');
+        'Female', '9876501002', 'Coimbatore', 'priyakumar@email.com', 'scrypt:32768:8:1');
 
-INSERT INTO patients
+INSERT INTO patients (patient_id, patient_name, date_of_birth, gender, phone, address, email, password_hash)
 VALUES (1003, 'Arjun Reddy', DATE '1999-03-08',
-        'Male', '9876501003', 'Vellore');
+        'Male', '9876501003', 'Vellore', 'arjunreddy@email.com', 'scrypt:32768:8:1');
 
-INSERT INTO patients
+INSERT INTO patients (patient_id, patient_name, date_of_birth, gender, phone, address, email, password_hash)
 VALUES (1004, 'Sneha Iyer', DATE '2003-07-19',
-        'Female', '9876501004', 'Chennai');
+        'Female', '9876501004', 'Chennai', 'snehaiyer@email.com', 'scrypt:32768:8:1');
 
-INSERT INTO patients
+INSERT INTO patients (patient_id, patient_name, date_of_birth, gender, phone, address, email, password_hash)
 VALUES (1005, 'Karthik Raj', DATE '1998-12-02',
-        'Male', '9876501005', 'Salem');
+        'Male', '9876501005', 'Salem', 'karthikraj@email.com', 'scrypt:32768:8:1');
 
-INSERT INTO patients
+INSERT INTO patients (patient_id, patient_name, date_of_birth, gender, phone, address, email, password_hash)
 VALUES (1006, 'Ananya Das', DATE '2000-09-30',
-        'Female', '9876501006', 'Madurai');
+        'Female', '9876501006', 'Madurai', 'ananyadas@email.com', 'scrypt:32768:8:1');
 
 
 -- 3. DOCTORS

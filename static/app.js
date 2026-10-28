@@ -1,4 +1,4 @@
-// Hospital Management System Dashboard — JavaScript
+// Hospital Management System & Patient Self-Service Portal — JavaScript
 
 const API_BASE = "";
 
@@ -10,9 +10,16 @@ let queryCatalog = [];
 let selectedDeptId = null;
 let doctorSearchTimer = null;
 
+// Auth & Portal State
+let currentUser = null;
+let currentAppMode = "admin"; // "admin" or "patient"
+let portalData = null;
+
 document.addEventListener("DOMContentLoaded", () => {
   initTabs();
+  initPortalTabs();
   initTopSearch();
+  checkAuthStatus();
   fetchOverviewStats();
   loadPatients();
   loadDepartments();
@@ -28,10 +35,536 @@ document.addEventListener("DOMContentLoaded", () => {
   const tomorrowStr = tomorrow.toISOString().split("T")[0];
   const dateInput = document.getElementById("bookApptDate");
   if (dateInput) dateInput.value = tomorrowStr;
+  const portalDateInput = document.getElementById("portalBookDate");
+  if (portalDateInput) portalDateInput.value = tomorrowStr;
 });
 
 // ==========================================
-// TABS & NAVIGATION
+// AUTHENTICATION & SESSION MANAGEMENT
+// ==========================================
+async function checkAuthStatus() {
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/me`);
+    const data = await res.json();
+    if (data.authenticated && data.patient) {
+      currentUser = data.patient;
+      updateAuthUI(true);
+    } else {
+      currentUser = null;
+      updateAuthUI(false);
+    }
+  } catch (err) {
+    console.warn("Auth check failed:", err);
+    updateAuthUI(false);
+  }
+}
+
+function updateAuthUI(isLoggedIn) {
+  const btnLogin = document.getElementById("btnOpenAuthModal");
+  const userBadge = document.getElementById("loggedInUserBadge");
+  const userNameSpan = document.getElementById("userDisplayName");
+
+  if (isLoggedIn && currentUser) {
+    if (btnLogin) btnLogin.style.display = "none";
+    if (userBadge) userBadge.style.display = "flex";
+    if (userNameSpan) userNameSpan.textContent = `${currentUser.patient_name} (#${currentUser.patient_id})`;
+  } else {
+    if (btnLogin) btnLogin.style.display = "inline-flex";
+    if (userBadge) userBadge.style.display = "none";
+  }
+}
+
+function switchAuthTab(tab) {
+  document.getElementById("btnTabLogin").classList.toggle("active", tab === "login");
+  document.getElementById("btnTabRegister").classList.toggle("active", tab === "register");
+  document.getElementById("patientLoginForm").style.display = tab === "login" ? "block" : "none";
+  document.getElementById("patientRegisterForm").style.display = tab === "register" ? "block" : "none";
+  document.getElementById("loginErrorAlert").style.display = "none";
+  document.getElementById("registerErrorAlert").style.display = "none";
+}
+
+async function handlePatientLogin(e) {
+  e.preventDefault();
+  const alertBox = document.getElementById("loginErrorAlert");
+  alertBox.style.display = "none";
+
+  const identifier = document.getElementById("loginIdentifier").value.trim();
+  const password = document.getElementById("loginPassword").value.trim();
+
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ identifier, password })
+    });
+    const result = await res.json();
+
+    if (!result.success) {
+      alertBox.textContent = result.error || "Login failed.";
+      alertBox.style.display = "block";
+      return;
+    }
+
+    currentUser = result.patient;
+    updateAuthUI(true);
+    closeModal("patientAuthModal");
+    document.getElementById("patientLoginForm").reset();
+
+    // Automatically switch to Patient Portal mode on login
+    setAppMode("patient");
+  } catch (err) {
+    alertBox.textContent = `Error: ${err.message}`;
+    alertBox.style.display = "block";
+  }
+}
+
+async function handlePatientSelfRegister(e) {
+  e.preventDefault();
+  const alertBox = document.getElementById("registerErrorAlert");
+  alertBox.style.display = "none";
+
+  const name = document.getElementById("authRegName").value.trim();
+  const email = document.getElementById("authRegEmail").value.trim();
+  const password = document.getElementById("authRegPassword").value.trim();
+  const dob = document.getElementById("authRegDOB").value;
+  const gender = document.getElementById("authRegGender").value;
+  const phone = document.getElementById("authRegPhone").value.trim();
+  const address = document.getElementById("authRegAddress").value.trim();
+
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        patient_name: name,
+        email,
+        password,
+        date_of_birth: dob,
+        gender,
+        phone,
+        address
+      })
+    });
+    const result = await res.json();
+
+    if (!result.success) {
+      alertBox.textContent = result.error || "Registration failed.";
+      alertBox.style.display = "block";
+      return;
+    }
+
+    alert(`🎉 Account Created! Welcome, ${name}. Your Patient ID is #${result.patient.patient_id}.`);
+    currentUser = result.patient;
+    updateAuthUI(true);
+    closeModal("patientAuthModal");
+    document.getElementById("patientRegisterForm").reset();
+
+    // Refresh admin lists & switch to patient mode
+    loadPatients();
+    fetchOverviewStats();
+    setAppMode("patient");
+  } catch (err) {
+    alertBox.textContent = `Error: ${err.message}`;
+    alertBox.style.display = "block";
+  }
+}
+
+async function handleLogout() {
+  try {
+    await fetch(`${API_BASE}/api/auth/logout`, { method: "POST" });
+  } catch (err) {}
+
+  currentUser = null;
+  updateAuthUI(false);
+  setAppMode("admin");
+}
+
+// ==========================================
+// VIEW MODE TOGGLE (ADMIN vs PATIENT PORTAL)
+// ==========================================
+function toggleAppMode() {
+  if (currentAppMode === "admin") {
+    if (!currentUser) {
+      // Prompt patient to log in first
+      openModal("patientAuthModal");
+      return;
+    }
+    setAppMode("patient");
+  } else {
+    setAppMode("admin");
+  }
+}
+
+function setAppMode(mode) {
+  currentAppMode = mode;
+  const adminLayout = document.getElementById("adminLayout");
+  const patientLayout = document.getElementById("patientPortalLayout");
+  const toggleBtnText = document.getElementById("modeToggleText");
+  const toggleBtnIcon = document.getElementById("modeToggleIcon");
+  const adminSearch = document.getElementById("headerAdminSearch");
+
+  if (mode === "patient") {
+    adminLayout.style.display = "none";
+    patientLayout.style.display = "flex";
+    if (toggleBtnText) toggleBtnText.textContent = "Switch to Hospital Admin";
+    if (toggleBtnIcon) toggleBtnIcon.textContent = "🏥";
+    if (adminSearch) adminSearch.style.display = "none";
+    loadPatientPortalDashboard();
+  } else {
+    adminLayout.style.display = "flex";
+    patientLayout.style.display = "none";
+    if (toggleBtnText) toggleBtnText.textContent = "Switch to Patient Portal";
+    if (toggleBtnIcon) toggleBtnIcon.textContent = "👤";
+    if (adminSearch) adminSearch.style.display = "flex";
+    fetchOverviewStats();
+  }
+}
+
+// ==========================================
+// PATIENT PORTAL CONTROLLER & MODULES
+// ==========================================
+function initPortalTabs() {
+  const portalNavItems = document.querySelectorAll(".portal-nav-item");
+  portalNavItems.forEach(item => {
+    item.addEventListener("click", () => {
+      const targetTab = item.getAttribute("data-portal-tab");
+      switchPortalTab(targetTab);
+    });
+  });
+}
+
+function switchPortalTab(tabId) {
+  document.querySelectorAll(".portal-nav-item").forEach(btn => {
+    btn.classList.toggle("active", btn.getAttribute("data-portal-tab") === tabId);
+  });
+
+  document.querySelectorAll(".portal-tab-pane").forEach(pane => {
+    pane.classList.toggle("active", pane.id === `portal-tab-${tabId}`);
+  });
+
+  if (tabId === "my-overview" || tabId === "my-appointments" || tabId === "my-prescriptions" || tabId === "my-billing") {
+    loadPatientPortalDashboard();
+  }
+}
+
+async function loadPatientPortalDashboard() {
+  if (!currentUser) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/patient/dashboard`, {
+      headers: { "X-Patient-ID": currentUser.patient_id }
+    });
+    const result = await res.json();
+    if (!result.success) {
+      if (res.status === 401) {
+        openModal("patientAuthModal");
+      }
+      return;
+    }
+
+    portalData = result;
+    const { patient, appointments, prescriptions, bills, stats } = portalData;
+
+    // Sidebar & Banner Welcome
+    document.getElementById("portalPatientName").textContent = patient.patient_name;
+    document.getElementById("portalPatientIdBadge").textContent = `ID: #${patient.patient_id}`;
+    document.getElementById("portalGreeting").textContent = `Welcome back, ${patient.patient_name}!`;
+    document.getElementById("portalGreetingSub").textContent = `Patient ID: #${patient.patient_id} • Contact: ${patient.phone || 'N/A'} • ${patient.gender || ''}`;
+
+    // Stats
+    document.getElementById("portalStatUpcoming").textContent = stats.scheduled_appointments;
+    document.getElementById("portalStatVisits").textContent = stats.total_appointments;
+    document.getElementById("portalStatPrescriptions").textContent = stats.total_prescriptions;
+    document.getElementById("portalStatDues").textContent = `₹${stats.total_balance_due.toFixed(2)}`;
+
+    // Render Upcoming Appointments Table in Overview
+    const upcoming = appointments.filter(a => a.status === "SCHEDULED");
+    const upcomingBody = document.getElementById("portalUpcomingApptsBody");
+    if (upcoming.length === 0) {
+      upcomingBody.innerHTML = `<tr><td colspan="6" class="loading-cell">No upcoming appointments scheduled. Click "Book Doctor Appointment" to schedule one!</td></tr>`;
+    } else {
+      upcomingBody.innerHTML = upcoming.map(a => `
+        <tr>
+          <td><strong>#${a.appointment_id}</strong></td>
+          <td><strong>${escapeHtml(a.doctor_name)}</strong> <span style="font-size:11px; color:#0284c7;">(${escapeHtml(a.specialization)})</span></td>
+          <td>${escapeHtml(a.department_name || '-')} (📍 ${escapeHtml(a.location || 'Main')})</td>
+          <td><strong>${a.appt_time}</strong></td>
+          <td><span class="badge badge-scheduled">SCHEDULED</span></td>
+          <td>
+            <button class="btn btn-outline btn-xs btn-danger" onclick="handlePatientCancelAppt(${a.appointment_id})">
+              Cancel
+            </button>
+          </td>
+        </tr>
+      `).join("");
+    }
+
+    // Render All Appointments in Booking Tab
+    const allApptsBody = document.getElementById("portalAllApptsBody");
+    if (appointments.length === 0) {
+      allApptsBody.innerHTML = `<tr><td colspan="7" class="loading-cell">No appointments recorded yet.</td></tr>`;
+    } else {
+      allApptsBody.innerHTML = appointments.map(a => `
+        <tr>
+          <td><strong>#${a.appointment_id}</strong></td>
+          <td><strong>${escapeHtml(a.doctor_name)}</strong></td>
+          <td>${escapeHtml(a.specialization)}</td>
+          <td>${escapeHtml(a.department_name || '-')}</td>
+          <td><strong>${a.appt_time}</strong></td>
+          <td><span class="badge badge-${a.status.toLowerCase()}">${a.status}</span></td>
+          <td>
+            ${a.status === 'SCHEDULED' ? `
+              <button class="btn btn-outline btn-xs btn-danger" onclick="handlePatientCancelAppt(${a.appointment_id})">
+                Cancel
+              </button>
+            ` : '<span style="color:#94a3b8; font-size:11px;">Completed/Archived</span>'}
+          </td>
+        </tr>
+      `).join("");
+    }
+
+    // Render Prescriptions Cards
+    const prescContainer = document.getElementById("portalPrescriptionsList");
+    if (prescriptions.length === 0) {
+      prescContainer.innerHTML = `<div class="content-card" style="padding:24px; text-align:center; color:#64748b;">No prescription records found for your visits.</div>`;
+    } else {
+      prescContainer.innerHTML = prescriptions.map(p => `
+        <div class="prescription-card">
+          <div class="presc-top">
+            <div>
+              <div class="presc-doctor">👨‍⚕️ ${escapeHtml(p.doctor_name)}</div>
+              <div style="font-size:11px; color:#0284c7;">${escapeHtml(p.specialization)}</div>
+            </div>
+            <div class="presc-date">📅 ${p.consultation_date}</div>
+          </div>
+          <div class="presc-diagnosis">
+            <strong>Clinical Diagnosis:</strong> ${escapeHtml(p.diagnosis || 'General Checkup')}
+          </div>
+          <div class="presc-medicines">
+            <div style="font-weight:700; margin-bottom:4px; color:#1e293b;">💊 Prescribed Medication:</div>
+            <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:10px;">
+              <div style="font-size:13px; font-weight:700; color:#0f172a;">${escapeHtml(p.medicine_name)}</div>
+              <div style="font-size:12px; color:#475569; margin-top:2px;">Dosage: <strong>${escapeHtml(p.dosage || '-')}</strong> • Duration: <strong>${escapeHtml(p.duration || '-')}</strong></div>
+            </div>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    // Render Bills & Pay Online Table
+    const billsBody = document.getElementById("portalBillsTableBody");
+    if (bills.length === 0) {
+      billsBody.innerHTML = `<tr><td colspan="8" class="loading-cell">No medical invoices found.</td></tr>`;
+    } else {
+      billsBody.innerHTML = bills.map(b => {
+        const isPaid = b.status === "PAID" || b.balance_due <= 0;
+        return `
+          <tr>
+            <td><strong>#${b.bill_id}</strong></td>
+            <td>Appt #${b.appointment_id} with ${escapeHtml(b.doctor_name || 'Doctor')} (${b.appt_date || ''})</td>
+            <td>₹${b.total_amount.toFixed(2)}</td>
+            <td>₹${b.paid_amount.toFixed(2)}</td>
+            <td style="font-weight:700; color:${isPaid ? '#15803d' : '#b91c1c'};">₹${b.balance_due.toFixed(2)}</td>
+            <td>${b.bill_date}</td>
+            <td><span class="badge badge-${b.status.toLowerCase()}">${b.status}</span></td>
+            <td>
+              ${!isPaid ? `
+                <button class="btn btn-primary btn-xs" onclick="openPatientPayModal(${b.bill_id}, ${b.total_amount}, ${b.balance_due})">
+                  💳 Pay Online
+                </button>
+              ` : '<span style="color:#15803d; font-size:12px; font-weight:700;">✓ Settled</span>'}
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    // Populate Booking Dropdowns
+    populatePortalBookingDropdowns();
+
+    // Populate Profile Form
+    document.getElementById("portalProfId").value = `#${patient.patient_id}`;
+    document.getElementById("portalProfName").value = patient.patient_name;
+    document.getElementById("portalProfEmail").value = patient.email || "Not specified";
+    document.getElementById("portalProfDob").value = patient.dob || "Not specified";
+    document.getElementById("portalProfPhone").value = patient.phone || "";
+    document.getElementById("portalProfAddress").value = patient.address || "";
+
+  } catch (err) {
+    console.error("Failed to load patient dashboard:", err);
+  }
+}
+
+function populatePortalBookingDropdowns() {
+  const deptSelect = document.getElementById("portalBookDeptSelect");
+  if (!deptSelect) return;
+
+  deptSelect.innerHTML = `<option value="">-- Choose Department --</option>` +
+    allDepartments.map(d => `<option value="${d.department_id}">${escapeHtml(d.department_name)} (📍 ${escapeHtml(d.location || 'Wing')})</option>`).join("");
+
+  filterPortalDoctorsByDept();
+}
+
+function filterPortalDoctorsByDept() {
+  const deptId = document.getElementById("portalBookDeptSelect").value;
+  const docSelect = document.getElementById("portalBookDoctorSelect");
+  if (!docSelect) return;
+
+  let filtered = allDoctors;
+  if (deptId) {
+    filtered = allDoctors.filter(d => String(d.department_id) === String(deptId));
+  }
+
+  if (filtered.length === 0) {
+    docSelect.innerHTML = `<option value="">No doctors available in this department</option>`;
+  } else {
+    docSelect.innerHTML = `<option value="">-- Choose Doctor --</option>` +
+      filtered.map(d => `<option value="${d.doctor_id}">#${d.doctor_id} - ${escapeHtml(d.doctor_name)} (${escapeHtml(d.specialization)}) [${d.status || 'AVAILABLE'}]</option>`).join("");
+  }
+}
+
+async function handlePatientSelfBooking(e) {
+  e.preventDefault();
+  const alertBox = document.getElementById("portalConflictAlert");
+  alertBox.style.display = "none";
+
+  const doctorId = document.getElementById("portalBookDoctorSelect").value;
+  const dateStr = document.getElementById("portalBookDate").value;
+  const timeStr = document.getElementById("portalBookTime").value;
+
+  if (!doctorId || !dateStr || !timeStr) {
+    alert("Please select doctor, appointment date, and time slot.");
+    return;
+  }
+
+  const appointmentTime = `${dateStr} ${timeStr}`;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/patient/appointments/book`, {
+      method: "POST",
+      headers: { 
+        "Content-Type": "application/json",
+        "X-Patient-ID": currentUser.patient_id
+      },
+      body: JSON.stringify({
+        doctor_id: parseInt(doctorId),
+        appointment_time: appointmentTime
+      })
+    });
+    const result = await res.json();
+
+    if (!result.success) {
+      if (result.conflict) {
+        alertBox.textContent = `⚠️ ${result.error}`;
+        alertBox.style.display = "block";
+        return;
+      }
+      throw new Error(result.error);
+    }
+
+    alert(`✅ Success: ${result.message}`);
+    document.getElementById("patientSelfBookForm").reset();
+    loadPatientPortalDashboard();
+    loadAppointments(); // update admin list
+    fetchOverviewStats();
+  } catch (err) {
+    alertBox.textContent = `Error: ${err.message}`;
+    alertBox.style.display = "block";
+  }
+}
+
+async function handlePatientCancelAppt(appointmentId) {
+  if (!confirm(`Are you sure you want to cancel appointment #${appointmentId}?`)) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/patient/appointments/${appointmentId}/cancel`, {
+      method: "PATCH",
+      headers: { "X-Patient-ID": currentUser.patient_id }
+    });
+    const result = await res.json();
+    if (!result.success) throw new Error(result.error);
+
+    alert(`Appointment #${appointmentId} has been cancelled.`);
+    loadPatientPortalDashboard();
+    loadAppointments();
+    fetchOverviewStats();
+  } catch (err) {
+    alert("Cancellation failed: " + err.message);
+  }
+}
+
+function openPatientPayModal(billId, total, due) {
+  document.getElementById("payModalBillId").value = billId;
+  document.getElementById("payModalBillRef").textContent = `#${billId}`;
+  document.getElementById("payModalBillTotal").textContent = `₹${total.toFixed(2)}`;
+  document.getElementById("payModalBillDue").textContent = `₹${due.toFixed(2)}`;
+  document.getElementById("payModalAmount").value = due.toFixed(2);
+  document.getElementById("payModalAmount").max = due;
+  openModal("patientPayModal");
+}
+
+async function handlePatientPaymentSubmit(e) {
+  e.preventDefault();
+  const billId = document.getElementById("payModalBillId").value;
+  const amount = document.getElementById("payModalAmount").value;
+  const payMethodInput = document.querySelector('input[name="payMethod"]:checked');
+  const paymentMethod = payMethodInput ? payMethodInput.value : "UPI";
+
+  try {
+    const res = await fetch(`${API_BASE}/api/patient/bills/${billId}/pay`, {
+      method: "POST",
+      headers: { 
+        "Content-Type": "application/json",
+        "X-Patient-ID": currentUser.patient_id
+      },
+      body: JSON.stringify({
+        amount: parseFloat(amount),
+        payment_method: paymentMethod
+      })
+    });
+    const result = await res.json();
+    if (!result.success) throw new Error(result.error);
+
+    alert(`🎉 Payment Successful!\n${result.message}\nNew Status: ${result.bill_status}\nRemaining Balance: ₹${result.remaining_balance.toFixed(2)}`);
+    closeModal("patientPayModal");
+    loadPatientPortalDashboard();
+    loadBilling();
+    fetchOverviewStats();
+  } catch (err) {
+    alert("Payment failed: " + err.message);
+  }
+}
+
+async function handlePortalProfileUpdate(e) {
+  e.preventDefault();
+  const phone = document.getElementById("portalProfPhone").value.trim();
+  const address = document.getElementById("portalProfAddress").value.trim();
+  const password = document.getElementById("portalProfPassword").value.trim();
+
+  try {
+    const res = await fetch(`${API_BASE}/api/patient/profile`, {
+      method: "PUT",
+      headers: { 
+        "Content-Type": "application/json",
+        "X-Patient-ID": currentUser.patient_id
+      },
+      body: JSON.stringify({ phone, address, password })
+    });
+    const result = await res.json();
+    if (!result.success) throw new Error(result.error);
+
+    alert("✓ Profile updated successfully!");
+    if (password) document.getElementById("portalProfPassword").value = "";
+    loadPatientPortalDashboard();
+    loadPatients();
+  } catch (err) {
+    alert("Profile update failed: " + err.message);
+  }
+}
+
+
+// ==========================================
+// ADMIN TABS & NAVIGATION
 // ==========================================
 function initTabs() {
   const navItems = document.querySelectorAll(".nav-item");
@@ -73,14 +606,15 @@ function initTopSearch() {
   const doSearch = () => {
     const val = input.value.trim();
     if (!val) return;
+    if (currentAppMode !== "admin") setAppMode("admin");
     switchTab("patients");
     const filterInput = document.getElementById("patientFilterInput");
     filterInput.value = val;
     loadPatients();
   };
 
-  btn.addEventListener("click", doSearch);
-  input.addEventListener("keypress", (e) => {
+  if (btn) btn.addEventListener("click", doSearch);
+  if (input) input.addEventListener("keypress", (e) => {
     if (e.key === "Enter") doSearch();
   });
 }
@@ -106,19 +640,22 @@ async function fetchOverviewStats() {
     document.getElementById("statUnpaid").textContent = stats.billing.unpaid_count;
 
     const badge = document.getElementById("dbStatusBadge");
-    badge.innerHTML = `<span class="status-dot online"></span><span class="status-text">Oracle 23ai Connected (${stats.patients} Patients)</span>`;
+    if (badge) {
+      badge.innerHTML = `<span class="status-dot online"></span><span class="status-text">Oracle 23ai (${stats.patients} Patients)</span>`;
+    }
   } catch (err) {
     console.error("Failed to load overview stats:", err);
   }
 }
 
 // ==========================================
-// 2. PATIENTS MODULE
+// 2. PATIENTS MODULE (ADMIN)
 // ==========================================
 async function loadPatients() {
   const query = document.getElementById("patientFilterInput")?.value.trim() || "";
   const tbody = document.getElementById("patientsTableBody");
-  tbody.innerHTML = `<tr><td colspan="7" class="loading-cell">Searching database...</td></tr>`;
+  if (!tbody) return;
+  tbody.innerHTML = `<tr><td colspan="8" class="loading-cell">Searching database...</td></tr>`;
 
   try {
     const url = query ? `${API_BASE}/api/patients?q=${encodeURIComponent(query)}` : `${API_BASE}/api/patients`;
@@ -126,7 +663,7 @@ async function loadPatients() {
     const result = await res.json();
 
     if (!result.success || !result.data.length) {
-      tbody.innerHTML = `<tr><td colspan="7" class="loading-cell">No patients found in Oracle database.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8" class="loading-cell">No patients found in Oracle database.</td></tr>`;
       return;
     }
 
@@ -134,7 +671,7 @@ async function loadPatients() {
     renderPatientsTable(allPatients);
     populatePatientSelects(allPatients);
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="7" class="loading-cell" style="color:red;">Error fetching patients: ${err.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" class="loading-cell" style="color:red;">Error fetching patients: ${err.message}</td></tr>`;
   }
 }
 
@@ -146,6 +683,7 @@ function clearPatientSearch() {
 
 function renderPatientsTable(patients) {
   const tbody = document.getElementById("patientsTableBody");
+  if (!tbody) return;
   tbody.innerHTML = patients.map(p => `
     <tr>
       <td><strong>#${p.patient_id}</strong></td>
@@ -153,7 +691,8 @@ function renderPatientsTable(patients) {
       <td>${p.dob || '-'}</td>
       <td>${p.gender || '-'}</td>
       <td>${p.phone || '-'}</td>
-      <td>${p.address || '-'}</td>
+      <td>${escapeHtml(p.email || '-')}</td>
+      <td>${escapeHtml(p.address || '-')}</td>
       <td>
         <button class="btn btn-outline btn-sm" onclick="viewPatientProfile(${p.patient_id})">
           📋 History
@@ -231,6 +770,8 @@ async function handlePatientRegistration(e) {
   const name = document.getElementById("regPatientName").value.trim();
   const dob = document.getElementById("regPatientDOB").value;
   const gender = document.getElementById("regPatientGender").value;
+  const email = document.getElementById("regPatientEmail")?.value.trim() || "";
+  const password = document.getElementById("regPatientPassword")?.value.trim() || "patient123";
   const phone = document.getElementById("regPatientPhone").value.trim();
   const address = document.getElementById("regPatientAddress").value.trim();
 
@@ -238,7 +779,15 @@ async function handlePatientRegistration(e) {
     const res = await fetch(`${API_BASE}/api/patients`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ patient_name: name, date_of_birth: dob, gender, phone, address })
+      body: JSON.stringify({ 
+        patient_name: name, 
+        date_of_birth: dob, 
+        gender, 
+        phone, 
+        address,
+        email,
+        password
+      })
     });
     const result = await res.json();
     if (!result.success) throw new Error(result.error);
@@ -254,7 +803,7 @@ async function handlePatientRegistration(e) {
 }
 
 // ==========================================
-// 3. DEPARTMENTS & DOCTORS MODULE (Workload & Availability)
+// 3. DEPARTMENTS & DOCTORS MODULE (ADMIN)
 // ==========================================
 async function loadDepartments() {
   try {
@@ -273,28 +822,34 @@ async function loadDepartments() {
       totalLeave += dept.on_leave_doctors;
     });
 
-    document.getElementById("allDeptsCount").textContent = `${totalDocs} Doctors`;
-    document.getElementById("allAvailCount").textContent = `🟢 ${totalAvail} Avail`;
-    document.getElementById("allBusyCount").textContent = `🟡 ${totalBusy} Busy`;
-    document.getElementById("allLeaveCount").textContent = `🔴 ${totalLeave} Leave`;
+    const allDeptsCount = document.getElementById("allDeptsCount");
+    if (allDeptsCount) allDeptsCount.textContent = `${totalDocs} Doctors`;
+    const allAvailCount = document.getElementById("allAvailCount");
+    if (allAvailCount) allAvailCount.textContent = `🟢 ${totalAvail} Avail`;
+    const allBusyCount = document.getElementById("allBusyCount");
+    if (allBusyCount) allBusyCount.textContent = `🟡 ${totalBusy} Busy`;
+    const allLeaveCount = document.getElementById("allLeaveCount");
+    if (allLeaveCount) allLeaveCount.textContent = `🔴 ${totalLeave} Leave`;
 
-    // Render department cards in side panel
+    // Render department cards in admin side panel
     const panel = document.getElementById("departmentListPanel");
-    panel.innerHTML = allDepartments.map(dept => `
-      <div class="dept-card ${selectedDeptId === dept.department_id ? 'active' : ''}" 
-           onclick="filterDoctorsByDept(${dept.department_id})">
-        <div class="dept-card-top">
-          <span class="dept-name">${escapeHtml(dept.department_name)}</span>
-          <span class="dept-total-badge">${dept.total_doctors} ${dept.total_doctors === 1 ? 'Doc' : 'Docs'}</span>
+    if (panel) {
+      panel.innerHTML = allDepartments.map(dept => `
+        <div class="dept-card ${selectedDeptId === dept.department_id ? 'active' : ''}" 
+             onclick="filterDoctorsByDept(${dept.department_id})">
+          <div class="dept-card-top">
+            <span class="dept-name">${escapeHtml(dept.department_name)}</span>
+            <span class="dept-total-badge">${dept.total_doctors} ${dept.total_doctors === 1 ? 'Doc' : 'Docs'}</span>
+          </div>
+          <div class="dept-location">📍 ${escapeHtml(dept.location || 'Wing A')}</div>
+          <div class="dept-status-breakdown">
+            <span class="status-chip chip-avail">🟢 ${dept.available_doctors} Avail</span>
+            <span class="status-chip chip-busy">🟡 ${dept.busy_doctors} Busy</span>
+            <span class="status-chip chip-leave">🔴 ${dept.on_leave_doctors} Leave</span>
+          </div>
         </div>
-        <div class="dept-location">📍 ${escapeHtml(dept.location || 'Wing A')}</div>
-        <div class="dept-status-breakdown">
-          <span class="status-chip chip-avail">🟢 ${dept.available_doctors} Avail</span>
-          <span class="status-chip chip-busy">🟡 ${dept.busy_doctors} Busy</span>
-          <span class="status-chip chip-leave">🔴 ${dept.on_leave_doctors} Leave</span>
-        </div>
-      </div>
-    `).join("");
+      `).join("");
+    }
 
     // Populate department dropdown in Add Doctor modal
     const deptSelect = document.getElementById("docDepartmentSelect");
@@ -310,8 +865,9 @@ async function loadDepartments() {
 function filterDoctorsByDept(deptId) {
   selectedDeptId = deptId;
 
-  // Toggle active class on all dept card vs specific dept cards
-  document.getElementById("deptFilterAll").classList.toggle("active", deptId === null);
+  const allCard = document.getElementById("deptFilterAll");
+  if (allCard) allCard.classList.toggle("active", deptId === null);
+
   document.querySelectorAll(".dept-card:not(.all-depts-card)").forEach((card, idx) => {
     const d = allDepartments[idx];
     if (d) {
@@ -331,15 +887,19 @@ function debounceDoctorSearch() {
 
 function resetDoctorFilters() {
   selectedDeptId = null;
-  document.getElementById("doctorSearchInput").value = "";
-  document.getElementById("doctorStatusFilter").value = "";
-  document.getElementById("deptFilterAll").classList.add("active");
+  const search = document.getElementById("doctorSearchInput");
+  if (search) search.value = "";
+  const filter = document.getElementById("doctorStatusFilter");
+  if (filter) filter.value = "";
+  const allCard = document.getElementById("deptFilterAll");
+  if (allCard) allCard.classList.add("active");
   document.querySelectorAll(".dept-card:not(.all-depts-card)").forEach(c => c.classList.remove("active"));
   loadDoctors();
 }
 
 async function loadDoctors() {
   const tbody = document.getElementById("doctorsTableBody");
+  if (!tbody) return;
   tbody.innerHTML = `<tr><td colspan="7" class="loading-cell">Loading doctors...</td></tr>`;
 
   const status = document.getElementById("doctorStatusFilter")?.value || "";
@@ -363,14 +923,11 @@ async function loadDoctors() {
 
     tbody.innerHTML = allDoctors.map(d => {
       const docStatus = (d.status || 'AVAILABLE').toUpperCase();
-      const statusBadgeClass = docStatus === 'AVAILABLE' ? 'badge-available' : (docStatus === 'BUSY' ? 'badge-busy' : 'badge-on_leave');
 
       return `
         <tr>
           <td><strong>#${d.doctor_id}</strong></td>
-          <td>
-            <strong>${escapeHtml(d.doctor_name)}</strong>
-          </td>
+          <td><strong>${escapeHtml(d.doctor_name)}</strong></td>
           <td><span style="color:#0284c7; font-weight:600;">${escapeHtml(d.specialization)}</span></td>
           <td>
             <div><strong>${escapeHtml(d.department_name || '-')}</strong></div>
@@ -409,7 +966,7 @@ async function updateDoctorStatus(doctorId, newStatus) {
     const result = await res.json();
     if (!result.success) throw new Error(result.error);
 
-    loadDepartments(); // Update department availability counters
+    loadDepartments();
   } catch (err) {
     alert("Status update failed: " + err.message);
     loadDoctors();
@@ -488,10 +1045,11 @@ async function handleDepartmentRegistration(e) {
 }
 
 // ==========================================
-// 4. APPOINTMENTS MODULE (Conflict Prevention)
+// 4. APPOINTMENTS MODULE (ADMIN)
 // ==========================================
 async function loadAppointments() {
   const tbody = document.getElementById("appointmentsTableBody");
+  if (!tbody) return;
   try {
     const res = await fetch(`${API_BASE}/api/appointments`);
     const result = await res.json();
@@ -514,7 +1072,7 @@ async function loadAppointments() {
           <div><strong>${escapeHtml(a.doctor_name)}</strong></div>
           <div style="font-size:11px; color:#0284c7;">#${a.doctor_id}</div>
         </td>
-        <td>${a.specialization}</td>
+        <td>${escapeHtml(a.specialization)}</td>
         <td><strong>${a.appointment_time}</strong></td>
         <td><span class="badge badge-${a.status.toLowerCase()}">${a.status}</span></td>
       </tr>
@@ -568,7 +1126,7 @@ async function handleAppointmentBooking(e) {
     closeModal("bookAppointmentModal");
     document.getElementById("bookAppointmentForm").reset();
     loadAppointments();
-    loadDoctors(); // update doctor workload
+    loadDoctors();
     fetchOverviewStats();
   } catch (err) {
     alertBox.textContent = `Error: ${err.message}`;
@@ -577,10 +1135,11 @@ async function handleAppointmentBooking(e) {
 }
 
 // ==========================================
-// 5. BILLING & PAYMENTS (ACID Transactions)
+// 5. BILLING & PAYMENTS (ADMIN)
 // ==========================================
 async function loadBilling() {
   const tbody = document.getElementById("billingTableBody");
+  if (!tbody) return;
   try {
     const res = await fetch(`${API_BASE}/api/billing`);
     const result = await res.json();
@@ -654,6 +1213,8 @@ async function loadQueryCatalog() {
 
     queryCatalog = result.catalog;
     const container = document.getElementById("queryList");
+    if (!container) return;
+
     container.innerHTML = queryCatalog.map((q, idx) => `
       <div class="query-card-item ${idx === 0 ? 'active' : ''}" onclick="selectQuery('${q.id}')">
         <div class="query-card-title">${q.title}</div>
@@ -665,7 +1226,8 @@ async function loadQueryCatalog() {
       selectQuery(queryCatalog[0].id);
     }
 
-    document.getElementById("btnExecuteQuery").addEventListener("click", executeCurrentQuery);
+    const btnRun = document.getElementById("btnExecuteQuery");
+    if (btnRun) btnRun.addEventListener("click", executeCurrentQuery);
   } catch (err) {
     console.error("Query catalog load error:", err);
   }
@@ -741,6 +1303,8 @@ async function loadEmbeddedSqlFiles() {
     if (!result.success) return;
 
     const list = document.getElementById("pcFileList");
+    if (!list) return;
+
     list.innerHTML = result.files.map((f, idx) => `
       <div class="pc-file-item ${idx === 0 ? 'active' : ''}" onclick="viewPcFile('${f.name}', '${escapeHtml(f.desc)}')">
         <div class="pc-file-name">📄 ${f.name}</div>
@@ -786,21 +1350,21 @@ function populatePatientSelects(patients) {
   const select = document.getElementById("bookPatientSelect");
   if (!select) return;
   select.innerHTML = `<option value="">-- Choose Patient --</option>` +
-    patients.map(p => `<option value="${p.patient_id}">#${p.patient_id} - ${p.patient_name} (${p.phone || 'No phone'})</option>`).join("");
+    patients.map(p => `<option value="${p.patient_id}">#${p.patient_id} - ${escapeHtml(p.patient_name)} (${p.phone || 'No phone'})</option>`).join("");
 }
 
 function populateDoctorSelects(doctors) {
   const select = document.getElementById("bookDoctorSelect");
   if (!select) return;
   select.innerHTML = `<option value="">-- Choose Doctor --</option>` +
-    doctors.map(d => `<option value="${d.doctor_id}">#${d.doctor_id} - ${d.doctor_name} (${d.specialization}) [${d.status || 'AVAILABLE'}]</option>`).join("");
+    doctors.map(d => `<option value="${d.doctor_id}">#${d.doctor_id} - ${escapeHtml(d.doctor_name)} (${escapeHtml(d.specialization)}) [${d.status || 'AVAILABLE'}]</option>`).join("");
 }
 
 function populateAppointmentSelects(appts) {
   const select = document.getElementById("billAppointmentSelect");
   if (!select) return;
   select.innerHTML = `<option value="">-- Choose Appointment --</option>` +
-    appts.map(a => `<option value="${a.appointment_id}">Appt #${a.appointment_id} - ${a.patient_name} with ${a.doctor_name} (${a.appointment_time})</option>`).join("");
+    appts.map(a => `<option value="${a.appointment_id}">Appt #${a.appointment_id} - ${escapeHtml(a.patient_name)} with ${escapeHtml(a.doctor_name)} (${a.appointment_time})</option>`).join("");
 }
 
 function openModal(id) {
@@ -815,5 +1379,5 @@ function closeModal(id) {
 
 function escapeHtml(str) {
   if (!str) return "";
-  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }

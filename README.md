@@ -54,6 +54,23 @@ This project demonstrates two connected interfaces interacting with the exact sa
    - **DBMS Query Explorer**: Interactive playground for professors and examiners to inspect Relational Algebra concepts (Selection, Inner Joins, Left Outer Joins, GROUP BY, Subqueries, and custom SQL execution with execution timer).
    - **Embedded SQL Lab**: Built-in inspector for all Pro*C `.pc` files explaining host variables, indicator variables, and cursor processing.
 
+3. **Patient Authentication & Self-Service Health Portal**:
+   - **Secure Patient Sign-Up & Login**: Built with industry-standard cryptographic password hashing (scrypt) and session authentication.
+   - **Login Identifiers**: Patients can authenticate using their registered **Email**, **Patient ID** (e.g. 1001), or **Phone Number**.
+   - **Demo Patient Credentials**: 
+     - **Identifier:** 1001 or 
+ahulsharma@email.com
+     - **Password:** patient123
+     *(All seeded patients have default password patient123).*
+   - **Dual-Mode Architecture**: Single-click toggle between **Hospital Admin View** (full operational controls) and **Patient Portal** (personalized patient view).
+   - **Self-Service Features**:
+     - **Health Summary**: Interactive KPI cards showing personal upcoming appointments, prescriptions, and total balance due.
+     - **Appointment Self-Booking**: Patients select doctor & department with live conflict detection.
+     - **Appointment Management**: One-click cancellation of upcoming visits.
+     - **Prescriptions & Consultations**: View past diagnoses, prescribed medicines, dosages, and durations.
+     - **Online Bill Payment**: Instant online settlement of outstanding invoices (UPI / Card / Net Banking) backed by atomic ACID transactions in Oracle.
+     - **Profile & Password Management**: Self-service updates to phone, address, and login credentials.
+
 ---
 
 ## 🗄️ Relational Database Schema (3NF)

@@ -22,6 +22,8 @@ CREATE TABLE patients (
     gender          VARCHAR2(10),
     phone           VARCHAR2(15),
     address         VARCHAR2(250),
+    email           VARCHAR2(100),
+    password_hash   VARCHAR2(255),
     CONSTRAINT chk_patient_gender
         CHECK (gender IN ('Male', 'Female', 'Other')
                OR gender IS NULL)
