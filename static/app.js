@@ -757,6 +757,7 @@ function switchTab(tabId) {
   }
   if (tabId === "appointments") loadAppointments();
   if (tabId === "billing") loadBilling();
+  if (tabId === "rubric-validation") runLiveValidationSuite();
 }
 
 // ==========================================
@@ -1543,4 +1544,154 @@ function closeModal(id) {
 function escapeHtml(str) {
   if (!str) return "";
   return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+// ==========================================
+// ORACLE 23ai CLINICAL DOCTOR MATCH & VALIDATION
+// ==========================================
+function setAiPrompt(context, text) {
+  const inputId = context === "admin" ? "aiAdminSymptomInput" : "aiPatientSymptomInput";
+  const el = document.getElementById(inputId);
+  if (el) el.value = text;
+}
+
+async function runAiDoctorMatch(context) {
+  const inputId = context === "admin" ? "aiAdminSymptomInput" : "aiPatientSymptomInput";
+  const resultsDiv = document.getElementById(context === "admin" ? "aiAdminMatchResults" : "aiPatientMatchResults");
+  const deptNameEl = document.getElementById(context === "admin" ? "aiAdminDeptName" : "aiPatientDeptName");
+  const deptLocEl = document.getElementById(context === "admin" ? "aiAdminDeptLocation" : "aiPatientDeptLocation");
+  const rationaleEl = document.getElementById(context === "admin" ? "aiAdminRationale" : "aiPatientRationale");
+  const badgeEl = document.getElementById(context === "admin" ? "aiAdminConfidenceBadge" : "aiPatientConfidenceBadge");
+  const tbody = document.getElementById(context === "admin" ? "aiAdminDoctorsBody" : "aiPatientDoctorsBody");
+
+  const symptoms = document.getElementById(inputId).value.trim();
+  if (!symptoms) {
+    showToast("Please enter or select symptoms first.", "error");
+    return;
+  }
+
+  showToast("Running Oracle 23ai Clinical Resolution...", "info");
+
+  try {
+    const res = await fetch(`${API_BASE}/api/ai/recommend-doctor`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symptoms })
+    });
+    const data = await res.json();
+    if (!data.success) {
+      showToast(data.error || "Analysis failed.", "error");
+      return;
+    }
+
+    const ai = data.ai_analysis;
+    deptNameEl.textContent = ai.recommended_department;
+    deptLocEl.textContent = `Department Clinical Wing • ${ai.matched_clinical_indicators.join(", ")}`;
+    rationaleEl.textContent = ai.clinical_rationale;
+    badgeEl.textContent = `${ai.confidence_score}% Confidence Match`;
+
+    const docs = data.recommendations || [];
+    if (docs.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="7" class="loading-cell">No active doctors found for this department.</td></tr>`;
+    } else {
+      tbody.innerHTML = docs.map(d => {
+        const statusBadge = `<span class="badge badge-${d.status.toLowerCase()}">${d.status}</span>`;
+        const scoreBadge = `<span class="badge" style="background:#e0f2fe; color:#0369a1; font-weight:800;">${d.match_percentage}%</span>`;
+        if (context === "admin") {
+          return `
+            <tr>
+              <td><strong>#${d.doctor_id}</strong></td>
+              <td><strong>${escapeHtml(d.doctor_name)}</strong></td>
+              <td>${escapeHtml(d.specialization)}</td>
+              <td>${escapeHtml(d.department_name)} (${escapeHtml(d.location)})</td>
+              <td>${statusBadge}</td>
+              <td>${scoreBadge}</td>
+            </tr>
+          `;
+        } else {
+          return `
+            <tr>
+              <td><strong>${escapeHtml(d.doctor_name)}</strong></td>
+              <td>${escapeHtml(d.specialization)}</td>
+              <td>${escapeHtml(d.department_name)} (${escapeHtml(d.location)})</td>
+              <td>${statusBadge}</td>
+              <td>${scoreBadge}</td>
+              <td>
+                <button class="btn btn-primary btn-xs" onclick="bookWithRecommendedDoctor(${d.doctor_id}, '${escapeHtml(d.department_name)}')">
+                  📅 Book Doctor
+                </button>
+              </td>
+            </tr>
+          `;
+        }
+      }).join("");
+    }
+
+    resultsDiv.style.display = "block";
+    showToast(`Matched department: ${ai.recommended_department}`, "success");
+  } catch (err) {
+    showToast(`Error: ${err.message}`, "error");
+  }
+}
+
+function bookWithRecommendedDoctor(doctorId, deptName) {
+  switchPortalTab("my-appointments");
+  setTimeout(() => {
+    const docSelect = document.getElementById("portalBookDoctorSelect");
+    if (docSelect) {
+      docSelect.value = doctorId;
+    }
+    showToast(`Selected doctor #${doctorId} for self-booking.`, "info");
+  }, 200);
+}
+
+// Live Validation Suite Runner
+async function runLiveValidationSuite() {
+  const tbody = document.getElementById("validationResultsBody");
+  const summaryBadge = document.getElementById("validationSuiteSummary");
+  const ratingBadge = document.getElementById("rubricValidationRatingBadge");
+
+  tbody.innerHTML = `<tr><td colspan="8" class="loading-cell">Executing live test queries against Oracle Database 23ai...</td></tr>`;
+  showToast("Running automated test cases on Oracle 23ai...", "info");
+
+  try {
+    const res = await fetch(`${API_BASE}/api/validation/run`);
+    const data = await res.json();
+    if (!data.success) {
+      tbody.innerHTML = `<tr><td colspan="8" class="loading-cell" style="color:red;">Error running test suite: ${data.error}</td></tr>`;
+      return;
+    }
+
+    const sum = data.summary;
+    summaryBadge.textContent = `${sum.passed}/${sum.total} Passed (${sum.score_percentage}%) — ${sum.assessment_level}`;
+    summaryBadge.className = sum.passed === sum.total ? "badge badge-completed" : "badge badge-partial";
+
+    if (ratingBadge) {
+      ratingBadge.textContent = `Rating: ${sum.assessment_level}`;
+    }
+
+    tbody.innerHTML = data.results.map(r => {
+      const isPass = r.status === "PASS";
+      const statusBadge = isPass 
+        ? `<span class="badge badge-completed">✅ PASS</span>` 
+        : `<span class="badge badge-cancelled">❌ FAIL</span>`;
+      return `
+        <tr>
+          <td><strong>${r.test_id}</strong></td>
+          <td><code style="font-size:11px; background:#f1f5f9; padding:2px 4px; border-radius:4px;">${r.co_mapping}</code></td>
+          <td>${escapeHtml(r.category)}</td>
+          <td><strong>${escapeHtml(r.name)}</strong></td>
+          <td style="font-size:11.5px; color:#64748b;">${escapeHtml(r.expected)}</td>
+          <td style="font-size:11.5px; color:#0f172a;">${escapeHtml(r.actual)}</td>
+          <td>${statusBadge}</td>
+          <td style="font-family:var(--font-mono); font-size:11.5px;">${r.time_ms} ms</td>
+        </tr>
+      `;
+    }).join("");
+
+    showToast(`Validation Complete: ${sum.passed}/${sum.total} Tests Passed! (${sum.assessment_level})`, "success");
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="8" class="loading-cell" style="color:red;">Failed to execute validation runner: ${err.message}</td></tr>`;
+    showToast(`Test suite execution error: ${err.message}`, "error");
+  }
 }
