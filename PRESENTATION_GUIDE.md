@@ -17,36 +17,37 @@ When your faculty asks you to demonstrate the project, follow this exact sequenc
 
 ---
 
-### Step 2: Live Web Dashboard & Query Operations (2 minutes)
+### Step 2: Role Gateway & Hospital Admin Operations (2 minutes)
 - **Action:** Open your browser at `http://localhost:5000`.
-- **Feature A: Quick Search & Relational Linking**
+- **Gateway Screen:** Show the initial Role Gateway highlighting strict separation between **Hospital Staff & Admin Portal** and the **Patient Health Portal**.
+- **Action:** Click **"⚡ 1-Click Instant Demo Admin"** (or log in with `admin` / `admin123`).
+- **Feature A: Doctor Availability Panel & Department Filters**
+  - Show the real-time Doctor Availability side panel (Available 🟢, Busy 🟡, On Leave 🔴). Click a department card to filter doctors instantly.
+- **Feature B: Quick Search & Relational Linking**
   - Type `1001` in the top search bar and press Enter.
   - Show the patient details for *Rahul Sharma*.
   - Click **History** to show how appointments, doctor details, and outstanding balances from three separate tables are joined and displayed together.
-- **Feature B: Concurrency & Booking Conflict Prevention**
+- **Feature C: Concurrency & Booking Conflict Prevention**
   - Click **Appointments** ➔ **Schedule Appointment**.
   - Try to book **Dr. Divya Menon** on `2026-11-10` at `11:00 AM`.
   - **What to say:**
     > *"Here we implemented active conflict prevention. If a receptionist tries to double-book a doctor at an already occupied time slot, the backend intercepts it with an HTTP 409 conflict check, avoiding race conditions."*
-- **Feature C: ACID Transaction Demonstration in Billing**
+- **Feature D: ACID Transaction Demonstration in Billing**
   - Click **Billing & Payments** ➔ **Generate Bill & Payment**.
   - Explain:
     > *"Billing is treated as an atomic transaction. Generating an invoice, inserting payment records, and calculating balances occur in a single transaction boundary: all operations succeed and commit together, or rollback entirely if any constraint is violated."*
 
 ---
 
----
-
-### Step 3: Patient Authentication & Self-Service Health Portal (1.5 minutes)
-- **Action:** In the top navigation bar, click **Switch to Patient Portal**.
-- **Action:** Click **Patient Login**:
-  - Enter Patient ID `1001` (or `rahulsharma@email.com`) with Password `patient123`.
+### Step 3: Patient Health Portal Demonstration (1.5 minutes)
+- **Action:** In the top navigation bar, click **"Switch to Patient View"** (or sign out to Gateway and click **"👤 1-Click Instant Demo Patient"**).
 - **What to show & say:**
-  > *"We also engineered a secure Patient Self-Service Portal demonstrating role-based database access and session security:"*
-  1. **Personalized Health Summary:** Show Rahul's appointments, digital prescriptions (4-table join: `PRESCRIPTIONS` $\to$ `CONSULTATIONS` $\to$ `APPOINTMENTS` $\to$ `PATIENTS`), and current outstanding invoice balance.
-  2. **Self-Booking & Conflict Interception:** Click **Book & Manage Appointments**, pick a doctor/time slot, and demonstrate self-booking.
-  3. **Online ACID Bill Settlement:** Click **Bills & Pay Online**, select unpaid bill 9005 (or any balance), click **Pay Online**, choose UPI/Card, and submit.
-  > *"The payment is processed as an atomic transaction that registers the payment row, updates the bill status to PAID, and commits to Oracle."*
+  > *"When a patient logs in, the system adapts entirely: admin controls are hidden, and the patient only sees their own medical records, preserving confidentiality and isolation:"*
+  1. **Personalized Health Overview:** Show Rahul's health summary, upcoming visits, active prescriptions, and outstanding invoice balance.
+  2. **Self-Booking & Conflict Interception:** Click **Book & Appointments**, choose a doctor and slot, and demonstrate patient self-booking.
+  3. **Multi-Table Joined Digital Prescriptions:** Click **Prescriptions & Records** to show prescriptions retrieved via a 4-table join (`PRESCRIPTIONS` $\to$ `CONSULTATIONS` $\to$ `APPOINTMENTS` $\to$ `PATIENTS`).
+  4. **Online ACID Bill Settlement:** Click **My Bills & Pay Online**, choose an unpaid invoice, click **Pay Online**, select UPI or Card, and authorize payment.
+  > *"The payment executes as an atomic transaction updating the ledger and bill status instantly in Oracle."*
 
 ---
 

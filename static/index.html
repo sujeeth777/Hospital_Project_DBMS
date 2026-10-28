@@ -12,51 +12,166 @@
 <body>
 
   <!-- Top Navigation Header -->
-  <header class="top-nav">
+  <header class="top-nav" id="mainTopNav">
     <div class="nav-brand">
-      <div class="logo-icon">🏥</div>
+      <div class="logo-icon-wrap">
+        <span class="logo-icon">🏥</span>
+      </div>
       <div class="brand-text">
-        <span class="system-title">MediCore Hospital & Patient Portal</span>
-        <span class="system-subtitle">Oracle 23ai • Embedded SQL (Pro*C) • Role-Based Auth</span>
+        <div class="brand-heading-row">
+          <span class="system-title">City Care Hospital</span>
+          <span id="navRoleBadge" class="nav-role-badge">System Gateway</span>
+        </div>
+        <span class="system-subtitle" id="navSubtitle">Relational DBMS & Patient Self-Service System</span>
       </div>
     </div>
 
-    <!-- Quick Patient Search Bar (Admin Mode) -->
-    <div class="header-search" id="headerAdminSearch">
+    <!-- Quick Patient Search Bar (Admin Mode Only) -->
+    <div class="header-search" id="headerAdminSearch" style="display: none;">
       <span class="search-icon">🔍</span>
-      <input type="text" id="topSearchInput" placeholder="Staff Patient Search (Enter ID e.g. 1001 or Name)..." />
+      <input type="text" id="topSearchInput" placeholder="Quick Patient Search (Enter ID e.g. 1001 or Name)..." />
       <button class="btn btn-primary btn-sm" id="topSearchBtn">Search</button>
     </div>
 
-    <!-- Top Right Nav & Authentication Controls -->
-    <div class="nav-right">
-      <!-- Mode Switcher Pill -->
-      <button class="btn btn-mode-toggle btn-sm" id="btnToggleAppMode" onclick="toggleAppMode()">
-        <span id="modeToggleIcon">👤</span>
-        <span id="modeToggleText">Switch to Patient Portal</span>
+    <!-- Top Right Nav & Controls -->
+    <div class="nav-right" id="navRightControls">
+      <!-- Database Connection Status Badge -->
+      <div class="db-status-pill" title="Oracle Database 23ai Connected">
+        <span class="status-pulse-dot"></span>
+        <span class="status-text">Oracle 23ai Active</span>
+      </div>
+
+      <!-- Quick Switch Role Button (for viva presentation convenience) -->
+      <button class="btn btn-switch-role btn-sm" id="btnQuickSwitchRole" style="display: none;" onclick="quickSwitchRole()">
+        <span id="quickSwitchIcon">🔄</span>
+        <span id="quickSwitchText">Switch to Patient View</span>
       </button>
 
-      <!-- Auth State Display -->
-      <div class="auth-box" id="authNavBox">
-        <button class="btn btn-primary btn-sm" id="btnOpenAuthModal" onclick="openModal('patientAuthModal')">
-          🔐 Patient Login
-        </button>
-        <div id="loggedInUserBadge" class="logged-in-pill" style="display: none;">
-          <span class="user-avatar">👤</span>
-          <div class="user-pill-info">
-            <span class="user-pill-name" id="userDisplayName">Patient</span>
-            <span class="user-pill-role">Authenticated</span>
-          </div>
-          <button class="btn-logout" onclick="handleLogout()" title="Log Out">🚪</button>
+      <!-- User Profile Badge & Logout -->
+      <div id="navUserBadge" class="user-profile-badge" style="display: none;">
+        <div class="user-avatar-circle" id="userAvatarCircle">👤</div>
+        <div class="user-badge-text">
+          <span class="user-badge-name" id="userDisplayName">User</span>
+          <span class="user-badge-role" id="userDisplayRole">Authenticated</span>
         </div>
+        <button class="btn-nav-logout" onclick="handleLogout()" title="Log Out / Return to Gateway">
+          <span>🚪</span>
+          <span class="logout-label">Sign Out</span>
+        </button>
       </div>
 
-      <div class="status-badge" id="dbStatusBadge">
-        <span class="status-dot online"></span>
-        <span class="status-text">Oracle 23ai</span>
-      </div>
+      <!-- Sign In Button (visible on Gateway screen) -->
+      <button class="btn btn-outline btn-sm" id="btnNavSignIn" style="display: inline-flex;" onclick="scrollToGatewayCards()">
+        🔐 Role Login
+      </button>
     </div>
   </header>
+
+  <!-- ======================================================== -->
+  <!-- VIEW 0: AUTHENTICATION & ROLE SELECTION GATEWAY          -->
+  <!-- ======================================================== -->
+  <section class="gateway-container" id="loginGatewayView">
+    <div class="gateway-hero">
+      <div class="gateway-badge">🎓 3RD YEAR CSE DBMS SEMESTER PROJECT</div>
+      <h1 class="gateway-title">Hospital Management & Patient Care System</h1>
+      <p class="gateway-subtitle">
+        An enterprise healthcare relational database architecture built with <strong>Oracle Database 23ai</strong> and <strong>Embedded SQL (Oracle Pro*C / C)</strong>. Normalized to 3NF with ACID financial transactions and role-based operational access.
+      </p>
+    </div>
+
+    <div class="gateway-cards-grid" id="gatewayCardsGrid">
+      <!-- CARD 1: HOSPITAL STAFF & ADMIN PORTAL -->
+      <div class="gateway-card card-admin">
+        <div class="gateway-card-header">
+          <div class="role-icon-box admin-icon">🛡️</div>
+          <div class="role-header-info">
+            <span class="card-role-tag admin-tag">ADMIN & CLINICAL OPS</span>
+            <h2>Hospital Staff Portal</h2>
+            <p>Reception desk, OPD scheduling, doctor availability, and DBMS query analytics.</p>
+          </div>
+        </div>
+
+        <div class="card-features">
+          <div class="feature-item"><span class="feat-icon">📊</span> <span>Live OPD metrics & dynamic multi-table database aggregates</span></div>
+          <div class="feature-item"><span class="feat-icon">👨‍⚕️</span> <span>Real-time Doctor Availability side panel (Available / Busy / Leave)</span></div>
+          <div class="feature-item"><span class="feat-icon">💳</span> <span>ACID Billing ledger & multi-statement transaction management</span></div>
+          <div class="feature-item"><span class="feat-icon">⚡</span> <span>Interactive DBMS Query Explorer (Joins, Subqueries & Profiling)</span></div>
+          <div class="feature-item"><span class="feat-icon">💻</span> <span>Embedded SQL (Pro*C / C) precompiler laboratory</span></div>
+        </div>
+
+        <form class="gateway-form" id="adminGatewayLoginForm" onsubmit="handleAdminGatewayLogin(event)">
+          <div class="form-group">
+            <label>Admin ID / Username</label>
+            <input type="text" id="adminUserField" value="admin" required placeholder="admin" class="input-control" />
+          </div>
+          <div class="form-group">
+            <label>Password</label>
+            <input type="password" id="adminPassField" value="admin123" required placeholder="admin123" class="input-control" />
+          </div>
+          <div id="adminLoginAlert" class="auth-error-alert" style="display:none;"></div>
+          <div class="gateway-actions">
+            <button type="submit" class="btn btn-admin-primary btn-block">
+              🔐 Sign In as Administrator
+            </button>
+            <button type="button" class="btn btn-admin-demo btn-block" onclick="quickLoginDemo('admin')">
+              ⚡ 1-Click Instant Demo Admin
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- CARD 2: PATIENT SELF-SERVICE HEALTH PORTAL -->
+      <div class="gateway-card card-patient">
+        <div class="gateway-card-header">
+          <div class="role-icon-box patient-icon">👤</div>
+          <div class="role-header-info">
+            <span class="card-role-tag patient-tag">PATIENT CARE PORTAL</span>
+            <h2>Patient Health Portal</h2>
+            <p>Self-service appointment booking, digital prescriptions, and online bill payments.</p>
+          </div>
+        </div>
+
+        <div class="card-features">
+          <div class="feature-item"><span class="feat-icon">🩺</span> <span>Personalized health dashboard & clinical consultation history</span></div>
+          <div class="feature-item"><span class="feat-icon">📅</span> <span>Doctor appointment self-booking with live conflict prevention</span></div>
+          <div class="feature-item"><span class="feat-icon">💊</span> <span>4-Table joined digital prescriptions & doctor diagnoses</span></div>
+          <div class="feature-item"><span class="feat-icon">💳</span> <span>Instant online invoice settlement backed by atomic transactions</span></div>
+          <div class="feature-item"><span class="feat-icon">🔒</span> <span>Secure cryptographic password hashing (scrypt) & session isolation</span></div>
+        </div>
+
+        <form class="gateway-form" id="patientGatewayLoginForm" onsubmit="handlePatientGatewayLogin(event)">
+          <div class="form-group">
+            <label>Patient ID / Email / Phone</label>
+            <input type="text" id="patientIdField" value="1001" required placeholder="1001 or rahulsharma@email.com" class="input-control" />
+          </div>
+          <div class="form-group">
+            <label>Password</label>
+            <input type="password" id="patientPassField" value="patient123" required placeholder="patient123" class="input-control" />
+          </div>
+          <div id="patientLoginAlert" class="auth-error-alert" style="display:none;"></div>
+          <div class="gateway-actions">
+            <button type="submit" class="btn btn-patient-primary btn-block">
+              🔐 Sign In to Patient Portal
+            </button>
+            <button type="button" class="btn btn-patient-demo btn-block" onclick="quickLoginDemo('patient')">
+              👤 1-Click Instant Demo Patient (Rahul #1001)
+            </button>
+            <button type="button" class="btn btn-outline btn-block" onclick="openModal('patientAuthModal'); switchAuthTab('register');">
+              📝 Register New Patient Account
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Academic Metadata Bar -->
+    <div class="gateway-footer-bar">
+      <div class="meta-pill"><span>🗄️</span> <span><strong>Oracle 23ai</strong> (3NF Relational Model)</span></div>
+      <div class="meta-pill"><span>⚡</span> <span><strong>Embedded SQL</strong> (Oracle Pro*C Precompiler + C)</span></div>
+      <div class="meta-pill"><span>🔒</span> <span><strong>ACID Transactions</strong> (Atomicity & Concurrency Control)</span></div>
+      <div class="meta-pill"><span>🛡️</span> <span><strong>Role-Based Access</strong> (Admin Control vs Patient Privacy)</span></div>
+    </div>
+  </section>
 
   <!-- ======================================================== -->
   <!-- VIEW 1: HOSPITAL ADMIN & STAFF VIEW                      -->
@@ -97,6 +212,9 @@
       <div class="sidebar-footer">
         <div class="footer-title">Academic Context</div>
         <div class="footer-text">Demonstrates Relational Algebra, 3NF Normalization, ACID Transactions, Host Variables & Pro*C Precompiled C.</div>
+        <button class="btn btn-outline btn-block btn-sm" onclick="quickSwitchRole()" style="margin-top: 10px;">
+          👤 Switch to Patient View
+        </button>
       </div>
     </aside>
 
@@ -521,8 +639,8 @@
       </nav>
 
       <div class="sidebar-footer">
-        <button class="btn btn-outline btn-block btn-sm" onclick="toggleAppMode()">
-          🏥 Switch to Hospital Admin
+        <button class="btn btn-outline btn-block btn-sm" onclick="quickSwitchRole()">
+          🛡️ Switch to Hospital Admin
         </button>
       </div>
     </aside>
@@ -1195,6 +1313,9 @@
       </div>
     </div>
   </div>
+
+  <!-- Toast Notifications Container -->
+  <div class="toast-container" id="toastContainer"></div>
 
   <script src="app.js"></script>
 </body>

@@ -12,7 +12,7 @@ let doctorSearchTimer = null;
 
 // Auth & Portal State
 let currentUser = null;
-let currentAppMode = "admin"; // "admin" or "patient"
+let currentRole = "gateway"; // "gateway", "admin", or "patient"
 let portalData = null;
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -20,14 +20,6 @@ document.addEventListener("DOMContentLoaded", () => {
   initPortalTabs();
   initTopSearch();
   checkAuthStatus();
-  fetchOverviewStats();
-  loadPatients();
-  loadDepartments();
-  loadDoctors();
-  loadAppointments();
-  loadBilling();
-  loadQueryCatalog();
-  loadEmbeddedSqlFiles();
 
   // Set default appointment date to tomorrow
   const tomorrow = new Date();
@@ -40,53 +32,227 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 // ==========================================
-// AUTHENTICATION & SESSION MANAGEMENT
+// AUTHENTICATION & ROLE-BASED ACCESS CONTROL
 // ==========================================
 async function checkAuthStatus() {
   try {
     const res = await fetch(`${API_BASE}/api/auth/me`);
     const data = await res.json();
-    if (data.authenticated && data.patient) {
-      currentUser = data.patient;
-      updateAuthUI(true);
+    if (data.authenticated) {
+      if (data.role === "admin") {
+        currentUser = data.user;
+        setAppRole("admin");
+      } else if (data.role === "patient" && data.patient) {
+        currentUser = data.patient;
+        setAppRole("patient");
+      } else {
+        setAppRole("gateway");
+      }
     } else {
       currentUser = null;
-      updateAuthUI(false);
+      setAppRole("gateway");
     }
   } catch (err) {
     console.warn("Auth check failed:", err);
-    updateAuthUI(false);
+    setAppRole("gateway");
   }
 }
 
-function updateAuthUI(isLoggedIn) {
-  const btnLogin = document.getElementById("btnOpenAuthModal");
-  const userBadge = document.getElementById("loggedInUserBadge");
-  const userNameSpan = document.getElementById("userDisplayName");
+function setAppRole(role) {
+  currentRole = role;
+  const gatewayView = document.getElementById("loginGatewayView");
+  const adminLayout = document.getElementById("adminLayout");
+  const patientLayout = document.getElementById("patientPortalLayout");
+  const adminSearch = document.getElementById("headerAdminSearch");
+  const navRoleBadge = document.getElementById("navRoleBadge");
+  const navSubtitle = document.getElementById("navSubtitle");
+  const btnQuickSwitch = document.getElementById("btnQuickSwitchRole");
+  const quickSwitchText = document.getElementById("quickSwitchText");
+  const quickSwitchIcon = document.getElementById("quickSwitchIcon");
+  const navUserBadge = document.getElementById("navUserBadge");
+  const userDisplayName = document.getElementById("userDisplayName");
+  const userDisplayRole = document.getElementById("userDisplayRole");
+  const userAvatarCircle = document.getElementById("userAvatarCircle");
+  const btnNavSignIn = document.getElementById("btnNavSignIn");
 
-  if (isLoggedIn && currentUser) {
-    if (btnLogin) btnLogin.style.display = "none";
-    if (userBadge) userBadge.style.display = "flex";
-    if (userNameSpan) userNameSpan.textContent = `${currentUser.patient_name} (#${currentUser.patient_id})`;
-  } else {
-    if (btnLogin) btnLogin.style.display = "inline-flex";
-    if (userBadge) userBadge.style.display = "none";
+  if (role === "admin") {
+    if (gatewayView) gatewayView.style.display = "none";
+    if (adminLayout) adminLayout.style.display = "flex";
+    if (patientLayout) patientLayout.style.display = "none";
+    if (adminSearch) adminSearch.style.display = "flex";
+    if (btnNavSignIn) btnNavSignIn.style.display = "none";
+
+    if (navRoleBadge) {
+      navRoleBadge.textContent = "Administrator Mode";
+      navRoleBadge.className = "nav-role-badge role-admin";
+    }
+    if (navSubtitle) navSubtitle.textContent = "Clinical Operations & DBMS Administration";
+
+    if (btnQuickSwitch) {
+      btnQuickSwitch.style.display = "inline-flex";
+      if (quickSwitchText) quickSwitchText.textContent = "Switch to Patient View";
+      if (quickSwitchIcon) quickSwitchIcon.textContent = "👤";
+    }
+
+    if (navUserBadge) {
+      navUserBadge.style.display = "flex";
+      if (userDisplayName) userDisplayName.textContent = currentUser ? (currentUser.name || "Administrator") : "Admin";
+      if (userDisplayRole) userDisplayRole.textContent = "Staff / Admin";
+      if (userAvatarCircle) userAvatarCircle.textContent = "🛡️";
+    }
+
+    // Load admin operations and relational explorer
+    fetchOverviewStats();
+    loadPatients();
+    loadDepartments();
+    loadDoctors();
+    loadAppointments();
+    loadBilling();
+    loadQueryCatalog();
+    loadEmbeddedSqlFiles();
+
+  } else if (role === "patient") {
+    if (gatewayView) gatewayView.style.display = "none";
+    if (adminLayout) adminLayout.style.display = "none";
+    if (patientLayout) patientLayout.style.display = "flex";
+    if (adminSearch) adminSearch.style.display = "none";
+    if (btnNavSignIn) btnNavSignIn.style.display = "none";
+
+    if (navRoleBadge) {
+      navRoleBadge.textContent = "Patient Portal";
+      navRoleBadge.className = "nav-role-badge role-patient";
+    }
+    if (navSubtitle) navSubtitle.textContent = "Personal Health Overview & Online Services";
+
+    if (btnQuickSwitch) {
+      btnQuickSwitch.style.display = "inline-flex";
+      if (quickSwitchText) quickSwitchText.textContent = "Switch to Staff Admin";
+      if (quickSwitchIcon) quickSwitchIcon.textContent = "🛡️";
+    }
+
+    if (navUserBadge) {
+      navUserBadge.style.display = "flex";
+      if (userDisplayName) userDisplayName.textContent = currentUser ? currentUser.patient_name : "Patient";
+      if (userDisplayRole) userDisplayRole.textContent = currentUser ? `ID: #${currentUser.patient_id}` : "Patient";
+      if (userAvatarCircle) userAvatarCircle.textContent = "👤";
+    }
+
+    // Load patient self-service dashboard
+    loadPatientPortalDashboard();
+
+  } else { // "gateway"
+    if (gatewayView) gatewayView.style.display = "block";
+    if (adminLayout) adminLayout.style.display = "none";
+    if (patientLayout) patientLayout.style.display = "none";
+    if (adminSearch) adminSearch.style.display = "none";
+    if (btnQuickSwitch) btnQuickSwitch.style.display = "none";
+    if (navUserBadge) navUserBadge.style.display = "none";
+    if (btnNavSignIn) btnNavSignIn.style.display = "inline-flex";
+
+    if (navRoleBadge) {
+      navRoleBadge.textContent = "System Gateway";
+      navRoleBadge.className = "nav-role-badge";
+    }
+    if (navSubtitle) navSubtitle.textContent = "Relational DBMS & Patient Self-Service System";
   }
 }
 
-function switchAuthTab(tab) {
-  document.getElementById("btnTabLogin").classList.toggle("active", tab === "login");
-  document.getElementById("btnTabRegister").classList.toggle("active", tab === "register");
-  document.getElementById("patientLoginForm").style.display = tab === "login" ? "block" : "none";
-  document.getElementById("patientRegisterForm").style.display = tab === "register" ? "block" : "none";
-  document.getElementById("loginErrorAlert").style.display = "none";
-  document.getElementById("registerErrorAlert").style.display = "none";
+// 1-Click Instant Demo Login (for viva evaluation)
+async function quickLoginDemo(role) {
+  try {
+    showToast(`Logging in as Demo ${role.toUpperCase()}...`, "info");
+    const res = await fetch(`${API_BASE}/api/auth/demo/${role}`, { method: "POST" });
+    const data = await res.json();
+    if (!data.success) {
+      showToast(data.error || "Login failed.", "error");
+      return;
+    }
+    currentUser = role === "admin" ? data.user : data.patient;
+    setAppRole(role);
+    showToast(`Welcome! Logged in as ${role === "admin" ? "Chief Administrator" : data.patient.patient_name}`, "success");
+  } catch (err) {
+    showToast(`Error: ${err.message}`, "error");
+  }
 }
 
+async function quickSwitchRole() {
+  const targetRole = currentRole === "admin" ? "patient" : "admin";
+  await quickLoginDemo(targetRole);
+}
+
+// Gateway Admin Login Handler
+async function handleAdminGatewayLogin(e) {
+  e.preventDefault();
+  const alertBox = document.getElementById("adminLoginAlert");
+  if (alertBox) alertBox.style.display = "none";
+
+  const identifier = document.getElementById("adminUserField").value.trim();
+  const password = document.getElementById("adminPassField").value.trim();
+
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ identifier, password })
+    });
+    const result = await res.json();
+    if (!result.success || result.role !== "admin") {
+      if (alertBox) {
+        alertBox.textContent = result.error || "Invalid administrator credentials (use admin / admin123).";
+        alertBox.style.display = "block";
+      }
+      return;
+    }
+    currentUser = result.user;
+    setAppRole("admin");
+    showToast("Authenticated as Administrator!", "success");
+  } catch (err) {
+    if (alertBox) {
+      alertBox.textContent = `Error: ${err.message}`;
+      alertBox.style.display = "block";
+    }
+  }
+}
+
+// Gateway Patient Login Handler
+async function handlePatientGatewayLogin(e) {
+  e.preventDefault();
+  const alertBox = document.getElementById("patientLoginAlert");
+  if (alertBox) alertBox.style.display = "none";
+
+  const identifier = document.getElementById("patientIdField").value.trim();
+  const password = document.getElementById("patientPassField").value.trim();
+
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ identifier, password })
+    });
+    const result = await res.json();
+    if (!result.success || result.role !== "patient") {
+      if (alertBox) {
+        alertBox.textContent = result.error || "Invalid patient credentials (demo: 1001 / patient123).";
+        alertBox.style.display = "block";
+      }
+      return;
+    }
+    currentUser = result.patient;
+    setAppRole("patient");
+    showToast(`Welcome back, ${currentUser.patient_name}!`, "success");
+  } catch (err) {
+    if (alertBox) {
+      alertBox.textContent = `Error: ${err.message}`;
+      alertBox.style.display = "block";
+    }
+  }
+}
+
+// Modal Login Handler (if accessed from modal)
 async function handlePatientLogin(e) {
   e.preventDefault();
   const alertBox = document.getElementById("loginErrorAlert");
-  alertBox.style.display = "none";
+  if (alertBox) alertBox.style.display = "none";
 
   const identifier = document.getElementById("loginIdentifier").value.trim();
   const password = document.getElementById("loginPassword").value.trim();
@@ -100,28 +266,35 @@ async function handlePatientLogin(e) {
     const result = await res.json();
 
     if (!result.success) {
-      alertBox.textContent = result.error || "Login failed.";
-      alertBox.style.display = "block";
+      if (alertBox) {
+        alertBox.textContent = result.error || "Login failed.";
+        alertBox.style.display = "block";
+      }
       return;
     }
 
-    currentUser = result.patient;
-    updateAuthUI(true);
-    closeModal("patientAuthModal");
-    document.getElementById("patientLoginForm").reset();
+    if (result.role === "admin") {
+      currentUser = result.user;
+      setAppRole("admin");
+    } else {
+      currentUser = result.patient;
+      setAppRole("patient");
+    }
 
-    // Automatically switch to Patient Portal mode on login
-    setAppMode("patient");
+    closeModal("patientAuthModal");
+    showToast(`Logged in successfully!`, "success");
   } catch (err) {
-    alertBox.textContent = `Error: ${err.message}`;
-    alertBox.style.display = "block";
+    if (alertBox) {
+      alertBox.textContent = `Error: ${err.message}`;
+      alertBox.style.display = "block";
+    }
   }
 }
 
 async function handlePatientSelfRegister(e) {
   e.preventDefault();
   const alertBox = document.getElementById("registerErrorAlert");
-  alertBox.style.display = "none";
+  if (alertBox) alertBox.style.display = "none";
 
   const name = document.getElementById("authRegName").value.trim();
   const email = document.getElementById("authRegEmail").value.trim();
@@ -148,24 +321,22 @@ async function handlePatientSelfRegister(e) {
     const result = await res.json();
 
     if (!result.success) {
-      alertBox.textContent = result.error || "Registration failed.";
-      alertBox.style.display = "block";
+      if (alertBox) {
+        alertBox.textContent = result.error || "Registration failed.";
+        alertBox.style.display = "block";
+      }
       return;
     }
 
-    alert(`🎉 Account Created! Welcome, ${name}. Your Patient ID is #${result.patient.patient_id}.`);
+    showToast(`Account created! Welcome, ${name} (ID: #${result.patient.patient_id})`, "success");
     currentUser = result.patient;
-    updateAuthUI(true);
     closeModal("patientAuthModal");
-    document.getElementById("patientRegisterForm").reset();
-
-    // Refresh admin lists & switch to patient mode
-    loadPatients();
-    fetchOverviewStats();
-    setAppMode("patient");
+    setAppRole("patient");
   } catch (err) {
-    alertBox.textContent = `Error: ${err.message}`;
-    alertBox.style.display = "block";
+    if (alertBox) {
+      alertBox.textContent = `Error: ${err.message}`;
+      alertBox.style.display = "block";
+    }
   }
 }
 
@@ -173,52 +344,44 @@ async function handleLogout() {
   try {
     await fetch(`${API_BASE}/api/auth/logout`, { method: "POST" });
   } catch (err) {}
-
   currentUser = null;
-  updateAuthUI(false);
-  setAppMode("admin");
+  setAppRole("gateway");
+  showToast("Logged out successfully. Returning to Gateway.", "info");
 }
 
-// ==========================================
-// VIEW MODE TOGGLE (ADMIN vs PATIENT PORTAL)
-// ==========================================
-function toggleAppMode() {
-  if (currentAppMode === "admin") {
-    if (!currentUser) {
-      // Prompt patient to log in first
-      openModal("patientAuthModal");
-      return;
-    }
-    setAppMode("patient");
-  } else {
-    setAppMode("admin");
-  }
+function switchAuthTab(tab) {
+  const btnLogin = document.getElementById("btnTabLogin");
+  const btnReg = document.getElementById("btnTabRegister");
+  const formLogin = document.getElementById("patientLoginForm");
+  const formReg = document.getElementById("patientRegisterForm");
+  if (btnLogin) btnLogin.classList.toggle("active", tab === "login");
+  if (btnReg) btnReg.classList.toggle("active", tab === "register");
+  if (formLogin) formLogin.style.display = tab === "login" ? "block" : "none";
+  if (formReg) formReg.style.display = tab === "register" ? "block" : "none";
 }
 
-function setAppMode(mode) {
-  currentAppMode = mode;
-  const adminLayout = document.getElementById("adminLayout");
-  const patientLayout = document.getElementById("patientPortalLayout");
-  const toggleBtnText = document.getElementById("modeToggleText");
-  const toggleBtnIcon = document.getElementById("modeToggleIcon");
-  const adminSearch = document.getElementById("headerAdminSearch");
-
-  if (mode === "patient") {
-    adminLayout.style.display = "none";
-    patientLayout.style.display = "flex";
-    if (toggleBtnText) toggleBtnText.textContent = "Switch to Hospital Admin";
-    if (toggleBtnIcon) toggleBtnIcon.textContent = "🏥";
-    if (adminSearch) adminSearch.style.display = "none";
-    loadPatientPortalDashboard();
-  } else {
-    adminLayout.style.display = "flex";
-    patientLayout.style.display = "none";
-    if (toggleBtnText) toggleBtnText.textContent = "Switch to Patient Portal";
-    if (toggleBtnIcon) toggleBtnIcon.textContent = "👤";
-    if (adminSearch) adminSearch.style.display = "flex";
-    fetchOverviewStats();
-  }
+function showToast(message, type = "info") {
+  const container = document.getElementById("toastContainer");
+  if (!container) return;
+  const toast = document.createElement("div");
+  toast.className = `toast toast-${type}`;
+  toast.innerHTML = `<span>${type === "success" ? "✅" : type === "error" ? "⚠️" : "ℹ️"}</span><span>${message}</span>`;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = "0";
+    toast.style.transform = "translateX(100%)";
+    setTimeout(() => toast.remove(), 250);
+  }, 3500);
 }
+
+function scrollToGatewayCards() {
+  const grid = document.getElementById("gatewayCardsGrid");
+  if (grid) grid.scrollIntoView({ behavior: "smooth" });
+}
+
+// Aliases for backwards compatibility
+function toggleAppMode() { quickSwitchRole(); }
+function setAppMode(mode) { setAppRole(mode); }
 
 // ==========================================
 // PATIENT PORTAL CONTROLLER & MODULES
@@ -462,7 +625,7 @@ async function handlePatientSelfBooking(e) {
       throw new Error(result.error);
     }
 
-    alert(`✅ Success: ${result.message}`);
+    showToast(`Appointment booked successfully! (${result.message})`, "success");
     document.getElementById("patientSelfBookForm").reset();
     loadPatientPortalDashboard();
     loadAppointments(); // update admin list
@@ -484,12 +647,12 @@ async function handlePatientCancelAppt(appointmentId) {
     const result = await res.json();
     if (!result.success) throw new Error(result.error);
 
-    alert(`Appointment #${appointmentId} has been cancelled.`);
+    showToast(`Appointment #${appointmentId} has been cancelled.`, "info");
     loadPatientPortalDashboard();
     loadAppointments();
     fetchOverviewStats();
   } catch (err) {
-    alert("Cancellation failed: " + err.message);
+    showToast("Cancellation failed: " + err.message, "error");
   }
 }
 
@@ -525,13 +688,13 @@ async function handlePatientPaymentSubmit(e) {
     const result = await res.json();
     if (!result.success) throw new Error(result.error);
 
-    alert(`🎉 Payment Successful!\n${result.message}\nNew Status: ${result.bill_status}\nRemaining Balance: ₹${result.remaining_balance.toFixed(2)}`);
+    showToast(`Payment of ₹${amount} successful! Bill #${billId} is now ${result.bill_status}.`, "success");
     closeModal("patientPayModal");
     loadPatientPortalDashboard();
     loadBilling();
     fetchOverviewStats();
   } catch (err) {
-    alert("Payment failed: " + err.message);
+    showToast("Payment failed: " + err.message, "error");
   }
 }
 
@@ -553,12 +716,12 @@ async function handlePortalProfileUpdate(e) {
     const result = await res.json();
     if (!result.success) throw new Error(result.error);
 
-    alert("✓ Profile updated successfully!");
+    showToast("Profile updated successfully in Oracle Database!", "success");
     if (password) document.getElementById("portalProfPassword").value = "";
     loadPatientPortalDashboard();
     loadPatients();
   } catch (err) {
-    alert("Profile update failed: " + err.message);
+    showToast("Profile update failed: " + err.message, "error");
   }
 }
 
